@@ -44,3 +44,22 @@ Only one Instance of Debugger exists at a time, and therefore copying is off for
 
 ```
 ---
+
+### Log 3
+```
+Date: 05 10  2026
+
+Goal of this session:
+Implement the helper functions used for reading source.bin, then validateProgram (Pass 0x0).
+
+What I did:
+Implemented readSourceLine to skip blank lines and trim whitespace and built firstWord and secondWord using common nextWord helper added validateProgram with funcOpen flag to detect nested unclosed or invalid function endings and report errors with line numbers
+
+Problems faced:
+Understood the difference between getline(in, line) and in.getline(buffer, size) and used the first one to read the line with any size. Also, handled Windows line endings by removing trailing \r in readSourceLine to make sure that func_end is located properly.
+
+Decisions / assumptions made:
+I have used one funcOpen flag as we cannot nest functions and line numbers are counted only on non-empty lines. This pass only checks that functions are properly opened and closed and reports the errors to cerr as there are no sockets yet. I have used size_t for storing positions in strings and fixed width integers for file values as later we have to write to .bin.
+
+```
+---

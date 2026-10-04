@@ -265,38 +265,37 @@ bool validateProgram(const char* sourcePath) // for each func defined there shou
         cerr << "Error: Cannot Open File " << sourcePath << endl;
         return false;
     }
-    bool insideFunc = false;   /*true while a func is open(depth is only ever 0 or 1)*/
+    bool funcOpen = false;   /*true while a func is open(depth is only ever 0 or 1)*/
     int32_t funcLineNo = 0;  /*line number of the currently open func*/
     int32_t lineNo = 0;        /*counts non - blank lines only*/
-    string line;
+    string currLine;
 
-    while (readSourceLine(Rdr, line))
+    while (readSourceLine(Rdr, currLine))
     {
         lineNo++;
-        string word = firstWord(line);
+        string word = firstWord(currLine);
 
         if (word == "func")
         {
-            if (insideFunc)
+            if (funcOpen)
             {
                 cerr << "Error: nested function declaration at line " << lineNo << " (function opened at line " << funcLineNo << " is not closed)" << endl;
                 return false;
             }
-            insideFunc = true;
+            funcOpen = true;
             funcLineNo = lineNo;
         }
         else if (word == "func_end")
         {
-            if (!insideFunc)
+            if (!funcOpen)
             {
                 cerr << "Error: func_end has no matching func at line " << lineNo << endl;
                 return false;
             }
-            insideFunc = false;
+            funcOpen = false;
         }
     }
-
-    if (insideFunc)
+    if (funcOpen)
     {
         cerr << "Error: func at line " << funcLineNo << " has no matching func_end" << endl;
         return false;
