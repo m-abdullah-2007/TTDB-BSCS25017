@@ -1,0 +1,38 @@
+# Visual Studio
+.vs/
+
+# Build output
+Debug/
+Release/
+x64/
+x86/
+
+# Intermediate files
+*.obj
+*.ipch
+*.pdb
+*.ilk
+*.tlog
+
+# Executables — ignored by default, except the one we ship
+*.exe
+!BSCS25017_FinalProject/BSCS25017_FinalProject/zscript.exe
+
+# User-specific settings
+*.vcxproj.user
+
+# raylib / g++ build artifacts (Linux & macOS builds)
+*.o
+*.out
+*.a
+*.so
+*.dylib
+
+# Editor / IDE clutter
+.vscode/
+*.swp
+*~
+
+# OS junk
+.DS_Store
+Thumbs.db
