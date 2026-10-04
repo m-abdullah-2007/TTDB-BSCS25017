@@ -211,24 +211,97 @@ struct PendingPatch
     string targetFuncName;
 };
 
-
+/*Self Made Helpers for 0x0*/
+static bool isSpaceChar(char c)
+{
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+static string nextWord(const string& line, size_t& i)
+{
+    /*skips all whitespace*/
+    while (i < line.size() && isSpaceChar(line[i])) {
+        i++;
+    }
+    size_t start = i;
+    /*goes till the next whitespace char*/
+    while (i < line.size() && !isSpaceChar(line[i])) {
+        i++;
+    }
+    return line.substr(start, i - start);
+}
 
 // PASS 0x0: READING source.bin + VALIDITY CHECK
-bool readSourceLine(ifstream& in, string& out)
+bool readSourceLine(ifstream& in, string& out) // reads the next non blank line
 {
-    // reads the next nonblank line
+    string line;
+    while (getline(in,line))
+    {
+        size_t end = line.find_last_not_of(" \t\r\n");
+        if (end == string::npos)
+            continue; // blank line
+        line.erase(end + 1);
+        line.erase(0, line.find_first_not_of(" \t"));
+        out = line;
+        return true;
+    }
+    return false;
+} 
+
+string firstWord(const string& line) //returns first word from the input string
+{
+    size_t i = 0;
+    return nextWord(line, i);
 }
-string firstWord(const string& line)
+string secondWord(const string& line) // returns the second word
 {
-    // returns first word from the input string
+    size_t i = 0;
+    nextWord(line, i); /*discarding the first word*/
+    return nextWord(line, i);
 }
-string secondWord(const string& line)
+bool validateProgram(const char* sourcePath) // for each func defined there should be exactly one func_end and no nested funcs allowed - 
 {
-    // returns the second word
-}
-bool validateProgram(const char* sourcePath)
-{
-    // for each func defined there should be exactly one func_end and no nested funcs allowed - 
+    ifstream Rdr(sourcePath);
+    if (!Rdr) {
+        cerr << "Error: Cannot Open File " << sourcePath << endl;
+        return false;
+    }
+    bool insideFunc = false;   /*true while a func is open(depth is only ever 0 or 1)*/
+    int32_t funcLineNo = 0;  /*line number of the currently open func*/
+    int32_t lineNo = 0;        /*counts non - blank lines only*/
+    string line;
+
+    while (readSourceLine(Rdr, line))
+    {
+        lineNo++;
+        string word = firstWord(line);
+
+        if (word == "func")
+        {
+            if (insideFunc)
+            {
+                cerr << "Error: nested function declaration at line " << lineNo << " (function opened at line " << funcLineNo << " is not closed)" << endl;
+                return false;
+            }
+            insideFunc = true;
+            funcLineNo = lineNo;
+        }
+        else if (word == "func_end")
+        {
+            if (!insideFunc)
+            {
+                cerr << "Error: func_end has no matching func at line " << lineNo << endl;
+                return false;
+            }
+            insideFunc = false;
+        }
+    }
+
+    if (insideFunc)
+    {
+        cerr << "Error: func at line " << funcLineNo << " has no matching func_end" << endl;
+        return false;
+    }
+    return true;
 }
 
 // PASS 0x1: RESOLVE() -> resolve.bin
