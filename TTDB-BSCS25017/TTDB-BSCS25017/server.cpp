@@ -112,8 +112,6 @@ public:
     }
 };
 
-
-// Timeline : doubly linked list of Snapshots
 struct Snapshot; // fwd declaration;
 struct TimelineNode
 {
@@ -121,6 +119,7 @@ struct TimelineNode
     TimelineNode* next;
     TimelineNode* prev;
 };
+// Timeline : doubly linked list of Snapshots
 class Timeline
 {
     TimelineNode* head, * tail;
@@ -128,18 +127,40 @@ class Timeline
 
 public:
     // Implement these functions
-    Timeline()
-    {
+    Timeline() :head(nullptr), tail(nullptr), stepCount(0) {}
+
+    ~Timeline() {
+        TimelineNode* temp = nullptr;
+        while (head != nullptr) {
+            temp = head;
+            head = head->next;
+            delete temp;
+        }
     }
+
+    /*my assumption is that TimeLine is never copied as we have only one instance of debugger at a time*/
+    Timeline(const Timeline& other) = delete;
+    Timeline& operator=(const Timeline& other) = delete;
+
     void record(Snapshot* s)
     {
-        // add record in the timeline
+        if (head == nullptr) {
+            head = new TimelineNode{ s, nullptr, nullptr };
+            tail = head;
+            stepCount++;
+            return;
+        }
+        tail->next = new TimelineNode{ s, nullptr, tail };
+        tail = tail->next;
+        stepCount++;
     }
     TimelineNode* begin()
     {
+        return head;
     }
     int32_t getStepCount()
     {
+        return stepCount;
     }
 };
 
