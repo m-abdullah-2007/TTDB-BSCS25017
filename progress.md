@@ -63,3 +63,21 @@ I have used one funcOpen flag as we cannot nest functions and line numbers are c
 
 ```
 ---
+
+### Log 4
+```
+Date: 05 10 2026 (Evening)
+
+Goal of this session:
+Understand binary files properly and implement Pass 0x1 (Resolve): writeResolveRecord, readResolveRecord and resolveProgram.
+
+What I did:
+I studied files that had a fixed byte layout that the writing program understood. This made it possible to have fixed-size fields use fseek and do in-place updates. I understood how little-endian storage worked, how to read hexadecimal representation and how to handle ASCII characters that didn't have '\0' terminators. I wrote writeResolveRecord with handling for files tracking of offsets and checked fwrite operations. I also wrote readResolveRecord with checks, for EOF, negative or oversized lengths and truncated records. I created resolveProgram in two phases: first writing records while keeping track of functions and calls and then using fseek to update call offsets with the correct function offsets and returning the offset of main at last. I added funcFind to look up functions and resolveFail to handle errors close the file and return -1.
+
+Problems faced:
+Verified the file in the hex editor noting that an initially empty tab showed 00000000. When the correct file was opened again the hex editor displayed the 42 bytes. I learned that the hex view shows data, in lines of 16 bytes so a 22-byte record that spreads over two lines is still one piece of data. I changed the call-offset placeholder from -1 to 0 because the function readResolveRecord uses -1 to signal end‑of‑file or an error. I also discovered that the stream object ifstream closes automatically when ifstream goes out of scope but a FILE* needs a fclose. The function resolveFail takes care of closing the FILE* on every error path.
+
+Decisions / assumptions made:
+Errors return ‑1. Offset 0 is valid. Therefore main must check mainOffset < 0. Call text stays the same. Only the 8‑byte offset field of the call is patched. If the call text were changed its length would. All later records would move. Non‑call records keep their offset. Call records keep 0 until patched. Patching happens after the entire file is written. This lets call records point to function records that appear later. Duplicate function names are not allowed. Nameless func or call records are also rejected. The number of arguments in a call is not checked in this pass. Binary files open, with FILE* and flags "wb+" or "rb”. All stored fields use int64_t and int32_t types.
+```
+---
