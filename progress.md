@@ -99,3 +99,21 @@ Decisions / assumptions made:
 The execution records one snapshot per executed line, with func main as step 0 and call snapshots showing the new frame. returnLine stores the call record’s byte position, arguments are copied in at call and back at func_end, and literals are not copied back. set creates new locals, operands may be literals or variables, and arithmetic destinations must already exist. Runtime errors stop execution while preserving and serializing the valid partial timeline. main must be exactly func main with no parameters.
 ```
 ---
+
+### Log 6
+```
+Date: 08 10 2026
+
+Goal of this session:
+Implement Pass 0x3 (Serialization), wire up main(), and test the whole pipeline end to end on a sample C-- program with nested calls.
+
+What I did:
+Designed the .tdbg format, implemented snapshot serialization and helper functions, completed writeHeader and writeTdbg with indexing and header patching, updated main() error codes and memory cleanup, and created an end-to-end nested-call sample program.
+
+Problems faced:
+Understood indexOffset as the byte position where the index begins, which is patched after writing all variable-sized snapshots. The index enables direct access to any snapshot, structs must be serialized field-by-field, and hex viewers may display bytes differently even when the underlying data is identical.
+
+Decisions / assumptions made:
+The .tdbg format uses version 1, little-endian values, and top-first frame ordering. Only used slots are serialized, requiring a dense index. writeHeader and writeTdbg return bool for error handling, while runtime errors preserve and serialize the partial timeline and still return 0. Errors use cerr, main() frees snapshots after serialization, and source.bin is read from the program’s working directory.
+```
+---
