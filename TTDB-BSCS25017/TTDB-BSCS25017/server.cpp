@@ -401,9 +401,10 @@ static int64_t throwResolveError(FILE* f, const string& msg)
 
 int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
 {
-    FuncEntry funcArray[MAX_FUNCS];
+    /*the stack was getting too big of the function so heap was used*/
+    FuncEntry* funcArray=new FuncEntry[MAX_FUNCS];
     int32_t funcCount = 0;
-    PendingPatch patches[MAX_PATCHES];
+    PendingPatch* patches=new PendingPatch[MAX_PATCHES];
     int32_t patchCount = 0;
 
     ifstream Rdr(sourcePath);
@@ -495,42 +496,388 @@ int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
         return throwResolveError(f, "no main function");
     }
     int64_t mainOffset = funcArray[mainIdx].byteOffsetInResolveBin;
-
     fclose(f);
+    delete funcArray;
+    delete patches;
     return mainOffset;
 }
 
 // PASS 0x2: EXECUTION (tokenization happens here)
 enum TokenType
 {
-    KEYWORD,
-    IDENTIFIER,
-    PARAM
+    KEYWORD,  /*e.g: func,set*/
+    IDENTIFIER, /*e.g: add,mul,sub*/
+    PARAM  /*e.g a,b,c*/
 };
 struct Token
 {
     TokenType type;
     string text;
 };
-int32_t tokenizeLine(const string& line, Token tokens[], int32_t maxTokens)
+
+// first word is always a instruction keyword
+// instruction set = [func, func_end, call, set, add, sub, mul and div]
+// next word is identifier like name of a function, variable name
+// after identifier all are the params/arg, space separated
+int32_t tokenizeLine(const string& line, Token* tokens, int32_t maxTokens)
 {
-    // first word is always a instruction keyword
-    // instruction set = [func, func_end, call, set, add, sub, mul and div]
-    // next word is identifier like name of a function, variable name
-    // after identifier all are the params/arg, space separated
+    size_t i = 0;
+    int32_t count = 0; /*count of tokens in the line*/
+    while (true)
+    {
+        string word = nextWord(line, i);
+        if (word.empty())
+        {
+            break; /* line Ended*/
+        }
+        if (count >= maxTokens)
+        {
+            return -1; /*more words then size of token Array */
+        }
+        tokens[count].text = word; 
+        if (count == 0)
+        {
+            tokens[count].type = KEYWORD; /* instruction */
+        }
+        else if (count == 1)
+        {
+            tokens[count].type = IDENTIFIER; /* function or variable name */
+        }
+        else
+        {
+            tokens[count].type = PARAM; /*parameters and arguments*/
+        }
+        count++;
+    }
+    return count;
 }
 Snapshot* buildSnapshot(Stack<Frame>& callStack)
 {
-    // build the snapshot based on the callStack given
+    Snapshot* snap = new Snapshot(); /*heap: a Snapshot is far too big for the stack and will also be  returned after this function ends*/
+    snap->stackDepth = callStack.snapshot_into(snap->callStack, MAX_STACK_DEPTH);
+    return snap;
 }
+
+/*Self Made Pass 0x2 helpers*/
+
+/*true if text is an integer like 10 or -5; the value goes into out*/
+static bool parseNumber(const string& text, int32_t& out)
+{
+    if (text.empty())
+    {
+        return false;
+    }
+    size_t i = 0;
+    bool negative = false;
+    if (text[0] == '-')
+    {
+        negative = true;
+        i = 1;
+    }
+    if (i >= text.size())
+    {
+        return false; /*only "-"*/
+    }
+    int64_t val = 0;
+    for (; i < text.size(); i++)
+    {
+        if (text[i] < '0' || text[i] > '9')
+        {
+            return false; /*Not Number*/
+        }
+        val = val * 10 + (text[i] - '0'); /*char to int conversion along with insertion at end*/
+        if (val > INT64_MAX)
+        {
+            return false; /*too big for int32_t*/
+        }
+    }
+    if (negative)
+    {
+        val = -val;
+    }
+    if (val < INT32_MIN || val > INT32_MAX)
+    {
+        return false;
+    }
+    out = static_cast<int32_t>(val);
+    return true;
+}
+
+/* finds a variable by name : parameters first, then locals then nullptr if missing */
+static Variable* findVar(Frame& fr, const string& varName)
+{
+    for (int32_t i = 0; i < fr.argc; i++)
+    {
+        if (fr.argv[i].name == varName)
+        {
+            return &fr.argv[i];
+        }
+    }
+    for (int32_t i = 0; i < fr.localCount; i++)
+    {
+        if (fr.locals[i].name == varName)
+        {
+            return &fr.locals[i];
+        }
+    }
+    return nullptr;
+}
+
+/* text is either a number or a variable name; false if it is neither */
+static bool getValue(Frame& fr, const string& text, int32_t& out)
+{
+    if (parseNumber(text, out))
+    {
+        return true;
+    }
+    Variable* v = findVar(fr, text);
+    if (v == nullptr)
+    {
+        return false;
+    }
+    out = v->value;
+    return true;
+}
+
+static bool throwRunTImeError(const string& msg, const string& instruction)
+{
+    cerr << "Runtime error: " << msg << " (Instruction: " << instruction << ")" << endl;
+    return false;
+}
+
+/* Runs the program.Returns false on a runtime error(the timeline recorded so far stays valid). */
+static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline)
+{
+    Stack<Frame> callStack;
+    Token* tokens=new Token[MAX_TOKENS];
+    string text;
+
+    /* main's header: must be exactly "func main" */
+    if (fseek(f, static_cast<long>(mainOffset), SEEK_SET) != 0) /*fseek use long*/
+    {
+        return throwRunTImeError("cannot seek to main", "None");
+    }
+    if (readResolveRecord(f, text) == -1)
+    {
+        return throwRunTImeError("cannot read main's header", "None");
+    }
+    int32_t n = tokenizeLine(text, tokens, MAX_TOKENS);
+    if (n != 2 || tokens[0].text != "func" || tokens[1].text != "main")
+    {
+        return throwRunTImeError("main's header must be exactly 'func main'", text);
+    }
+
+    Frame mainFrame = Frame(); /* default initialized */
+    mainFrame.func_name = "main";
+    mainFrame.returnLine = -1;
+    callStack.push(mainFrame);
+    timeline.record(buildSnapshot(callStack)); /* step 0 */
+
+    /* executed line by line */
+    while (true)
+    {
+        int64_t recStart = static_cast<int64_t>(ftell(f)); /*starting bit of offset where this record starts */
+        int64_t field = readResolveRecord(f, text);        /* for a call : the target's offset is returned */
+        if (field == -1)
+        {
+            return throwRunTImeError("reached the end of resolve.bin before main ended", "None");
+        }
+        n = tokenizeLine(text, tokens, MAX_TOKENS);
+        if (n < 1)
+        {
+            return throwRunTImeError("empty or too long instruction", text);
+        }
+        const string& identi = tokens[0].text;
+
+        if (identi == "set")
+        {
+            if (n != 3)
+            {
+                return throwRunTImeError("set needs a variable and a value", text);
+            }
+            Frame& cur = callStack.peek();
+            int32_t val = 0;
+            if (!getValue(cur, tokens[2].text, val))
+            {
+                return throwRunTImeError("undefined variable '" + tokens[2].text + "'", text);
+            }
+            Variable* v = findVar(cur, tokens[1].text);
+            if (v != nullptr)
+            {
+                v->value = val;
+            }
+            else
+            {
+                int32_t dummy = 0;
+                if (parseNumber(tokens[1].text, dummy))
+                {
+                    return throwRunTImeError("a number cannot be used as a variable name", text);
+                }
+                if (cur.localCount >= MAX_VARS_PER_FRAME)
+                {
+                    return throwRunTImeError("too many local variables", text);
+                }
+                cur.locals[cur.localCount].name = tokens[1].text;
+                cur.locals[cur.localCount].value = val;
+                cur.localCount++;
+            }
+            timeline.record(buildSnapshot(callStack));
+        }
+        else if (identi == "add" || identi == "sub" || identi == "mul" || identi == "div")
+        {
+            if (n != 3)
+            {
+                return throwRunTImeError(identi + " needs a variable and a value", text);
+            }
+            Frame& cur = callStack.peek();
+            Variable* dst = findVar(cur, tokens[1].text);
+            if (dst == nullptr)
+            {
+                return throwRunTImeError("undefined variable '" + tokens[1].text + "'", text);
+            }
+            int32_t rhs = 0;
+            if (!getValue(cur, tokens[2].text, rhs))
+            {
+                return throwRunTImeError("undefined variable '" + tokens[2].text + "'", text);
+            }
+            int64_t a = dst->value;
+            int64_t b = rhs;
+            int64_t r = 0;
+            if (identi == "add")
+            {
+                r = a + b;
+            }
+            else if (identi == "sub")
+            {
+                r = a - b;
+            }
+            else if (identi == "mul")
+            {
+                r = a * b;
+            }
+            else
+            {
+                if (b == 0)
+                {
+                    return throwRunTImeError("division by zero", text);
+                }
+                r = a / b;
+            }
+            if (r < INT32_MIN || r > INT32_MAX)
+            {
+                return throwRunTImeError("arithmetic overflow", text);
+            }
+            dst->value = static_cast<int32_t>(r);
+            timeline.record(buildSnapshot(callStack));
+        }
+        else if (identi == "call")
+        {
+            if (n < 2)
+            {
+                return throwRunTImeError("call needs a function name", text);
+            }
+            Frame& cur = callStack.peek();
+            int32_t argc = n - 2;
+            int32_t argVals[MAX_VARS_PER_FRAME];
+            for (int32_t i = 0; i < argc; i++)
+            {
+                if (!getValue(cur, tokens[2 + i].text, argVals[i]))
+                {
+                    return throwRunTImeError("undefined variable '" + tokens[2 + i].text + "'", text);
+                }
+            }
+
+            /* jump to the call's header (the offset field was patched by resolve) */
+            if (fseek(f, static_cast<long>(field), SEEK_SET) != 0)
+            {
+                return throwRunTImeError("cannot seek to the called function", text);
+            }
+            string header;
+            if (readResolveRecord(f, header) == -1)
+            {
+                return throwRunTImeError("cannot read the called function's header", text);
+            }
+            Token ht[MAX_TOKENS];
+            int32_t hn = tokenizeLine(header, ht, MAX_TOKENS);
+            if (hn < 2 || ht[0].text != "func")
+            {
+                return throwRunTImeError("call target is not a function", text);
+            }
+            int32_t params = hn - 2;
+            if (params != argc)
+            {
+                return throwRunTImeError("'" + ht[1].text + "' expects " + to_string(params) + " argument(s) but got " + to_string(argc),text);
+            }
+            Frame fr = Frame();
+            fr.func_name = ht[1].text;
+            fr.argc = params;
+            for (int32_t i = 0; i < params; i++)
+            {
+                fr.argv[i].name = ht[2 + i].text;
+                fr.argv[i].value = argVals[i]; // copy in
+            }
+            fr.returnLine = static_cast<int32_t>(recStart); // where the call record is
+            callStack.push(fr);                             // may throw overflow_error
+            timeline.record(buildSnapshot(callStack));
+            // the file cursor is now right after the callee's header = its first body line
+        }
+        else if (identi == "func_end")
+        {
+            if (callStack.depth() == 1)
+            {
+                timeline.record(buildSnapshot(callStack)); // final state, taken BEFORE popping
+                callStack.pop();
+                return true;
+            }
+            Frame callee = callStack.pop();
+
+            // re-read the call record: it gives the argument names and leaves the cursor on the next line
+            if (fseek(f, static_cast<long>(callee.returnLine), SEEK_SET) != 0)
+            {
+                return throwRunTImeError("cannot seek back to the call", text);
+            }
+            string callText;
+            if (readResolveRecord(f, callText) == -1)
+            {
+                return throwRunTImeError("cannot read the call record", text);
+            }
+            Token ct[MAX_TOKENS];
+            int32_t cn = tokenizeLine(callText, ct, MAX_TOKENS);
+            Frame& caller = callStack.peek();
+            for (int32_t i = 0; i < callee.argc && 2 + i < cn; i++)
+            {
+                Variable* v = findVar(caller, ct[2 + i].text);
+                if (v != nullptr) // literal arguments are skipped
+                {
+                    v->value = callee.argv[i].value; // copy out
+                }
+            }
+            timeline.record(buildSnapshot(callStack));
+        }
+        else
+        {
+            return throwRunTImeError("unknown or unexpected keyword '" + identi + "'", text);
+        }
+    }
+}
+
 void executeProgram(const char* resolveBinPath, int64_t mainOffset, Timeline& timeline)
 {
-    // initialize the call stack
-    // make the main frame
-    // push main frame on the call stack
-
-    // implementation:
-    // execute line by line, and according to the keyword perform action
+    FILE* f = fopen(resolveBinPath, "rb");
+    if (f == nullptr)
+    {
+        cerr << "Error: cannot open " << resolveBinPath << endl;
+        return;
+    }
+    try
+    {
+        runProgram(f, mainOffset, timeline);
+    }
+    catch (const exception& e) // e.g. the stack's overflow_error on runaway recursion
+    {
+        cerr << "Runtime error: " << e.what() << endl;
+    }
+    fclose(f);
 }
 
 // PASS 0x3: SERIALIZE TIMELINE
