@@ -1,0 +1,16 @@
+func main
+set a 5
+set b 2
+call addten a
+sub b 1
+mul b 7
+div b 2
+func_end
+func addten x
+set t 10
+add x t
+call double x
+func_end
+func double n
+add n n
+func_end

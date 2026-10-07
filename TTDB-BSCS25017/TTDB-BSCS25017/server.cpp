@@ -6,7 +6,7 @@
 //   2. Pass 0X1   -- resolve(): copy EVERY source line into resolve.bin as [offset][size][string], then patch CALL targets.
 //   3. Pass 0X2   -- execute resolve.bin: tokenize ONE line at a time, update the call stack, take a snapshot -> Timeline
 //   4. Pass 0X3   -- serialize Timeline -> session.tdbg(header + snapshot records + dense index)
-
+#define _CRT_SECURE_NO_WARNINGS
 #include <iostream>
 #include <string>
 #include <cstdint> // for int32_t
@@ -38,14 +38,14 @@ class Stack
     {
         T data;
         Node* next;
-        Node(const T& d, Node* ptr) :data(d),next(ptr){}
+        Node(const T& d, Node* ptr) :data(d), next(ptr) {}
     };
     Node* top;
     int32_t count;
 
 public:
     // Implement these functions:
-    Stack():top(nullptr),count(0) {} // initialize the stack
+    Stack() :top(nullptr), count(0) {} // initialize the stack
 
     ~Stack()
     {
@@ -67,7 +67,7 @@ public:
         {
             throw overflow_error("Stack has reached its Max Limit!");
         }
-        Node* temp = new Node(val,top);
+        Node* temp = new Node(val, top);
         top = temp;
         count++;
     }
@@ -184,6 +184,14 @@ struct Snapshot
     Frame callStack[MAX_STACK_DEPTH];
     int32_t stackDepth;
 };
+
+Snapshot* buildSnapshot(Stack<Frame>& callStack)
+{
+    Snapshot* snap = new Snapshot(); /*heap: a Snapshot is far too big for the stack and will also be  returned after this function ends*/
+    snap->stackDepth = callStack.snapshot_into(snap->callStack, MAX_STACK_DEPTH);
+    return snap;
+}
+
 struct TTDBHeader
 {
     char magic[4]; // "TTDB"
@@ -191,12 +199,32 @@ struct TTDBHeader
     int32_t stepCount;
     int64_t indexOffset;
 };
-void writeHeader(FILE* f, const TTDBHeader& h)
-{
-    fwrite(h.magic, 1, 4, f);
-    fwrite(&h.version, sizeof(int32_t), 1, f);
 
-    // placeholder for other two data members
+/* Header = magic(4) + version(4) + stepCount(4) + indexOffset(8) = 20 bytes. */
+/* Each field is written on its own, never the whole struct, so no padding bytes reach the file. */
+bool writeHeader(FILE* f, const TTDBHeader& h)
+{
+    if (f == nullptr)
+    {
+        return false;
+    }
+    if (fwrite(h.magic, sizeof(char), 4, f) != 4)
+    {
+        return false;
+    }
+    if (fwrite(&h.version, sizeof(int32_t), 1, f) != 1)
+    {
+        return false;
+    }
+    if (fwrite(&h.stepCount, sizeof(int32_t), 1, f) != 1)
+    {
+        return false;
+    }
+    if (fwrite(&h.indexOffset, sizeof(int64_t), 1, f) != 1)
+    {
+        return false;
+    }
+    return true;
 }
 
 // resolve.bin - bookkeeping
@@ -234,7 +262,7 @@ static string nextWord(const string& line, size_t& i)
 bool readSourceLine(ifstream& in, string& out) // reads the next non blank line
 {
     string line;
-    while (getline(in,line))
+    while (getline(in, line))
     {
         size_t end = line.find_last_not_of(" \t\r\n");
         if (end == string::npos)
@@ -245,7 +273,7 @@ bool readSourceLine(ifstream& in, string& out) // reads the next non blank line
         return true;
     }
     return false;
-} 
+}
 
 string firstWord(const string& line) //returns first word from the input string
 {
@@ -402,9 +430,9 @@ static int64_t throwResolveError(FILE* f, const string& msg)
 int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
 {
     /*the stack was getting too big of the function so heap was used*/
-    FuncEntry* funcArray=new FuncEntry[MAX_FUNCS];
+    FuncEntry* funcArray = new FuncEntry[MAX_FUNCS];
     int32_t funcCount = 0;
-    PendingPatch* patches=new PendingPatch[MAX_PATCHES];
+    PendingPatch* patches = new PendingPatch[MAX_PATCHES];
     int32_t patchCount = 0;
 
     ifstream Rdr(sourcePath);
@@ -497,8 +525,8 @@ int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
     }
     int64_t mainOffset = funcArray[mainIdx].byteOffsetInResolveBin;
     fclose(f);
-    delete funcArray;
-    delete patches;
+    delete[] funcArray;
+    delete[] patches;
     return mainOffset;
 }
 
@@ -534,7 +562,7 @@ int32_t tokenizeLine(const string& line, Token* tokens, int32_t maxTokens)
         {
             return -1; /*more words then size of token Array */
         }
-        tokens[count].text = word; 
+        tokens[count].text = word;
         if (count == 0)
         {
             tokens[count].type = KEYWORD; /* instruction */
@@ -550,12 +578,6 @@ int32_t tokenizeLine(const string& line, Token* tokens, int32_t maxTokens)
         count++;
     }
     return count;
-}
-Snapshot* buildSnapshot(Stack<Frame>& callStack)
-{
-    Snapshot* snap = new Snapshot(); /*heap: a Snapshot is far too big for the stack and will also be  returned after this function ends*/
-    snap->stackDepth = callStack.snapshot_into(snap->callStack, MAX_STACK_DEPTH);
-    return snap;
 }
 
 /*Self Made Pass 0x2 helpers*/
@@ -646,14 +668,14 @@ static bool throwRunTImeError(const string& msg, const string& instruction)
 }
 
 /* Runs the program.Returns false on a runtime error(the timeline recorded so far stays valid). */
-static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline)
-{
+static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline) /*Time Line is passed by reference so snapshots recorded here stay visible and we also delete timeline's copy constructor and assignment operator*/
+{   /*main offset returned by resolveProgram*/
     Stack<Frame> callStack;
-    Token* tokens=new Token[MAX_TOKENS];
-    string text;
+    Token* tokens = new Token[MAX_TOKENS];
+    string text; /*raw line entry*/
 
     /* main's header: must be exactly "func main" */
-    if (fseek(f, static_cast<long>(mainOffset), SEEK_SET) != 0) /*fseek use long*/
+    if (fseek(f, static_cast<long>(mainOffset), SEEK_SET) != 0) /*fseek uses long*/
     {
         return throwRunTImeError("cannot seek to main", "None");
     }
@@ -676,14 +698,16 @@ static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline)
     /* executed line by line */
     while (true)
     {
+        /*Both used only if a function is called*/
         int64_t recStart = static_cast<int64_t>(ftell(f)); /*starting bit of offset where this record starts */
         int64_t field = readResolveRecord(f, text);        /* for a call : the target's offset is returned */
+        /*Just in case if validation fails*/
         if (field == -1)
         {
             return throwRunTImeError("reached the end of resolve.bin before main ended", "None");
         }
         n = tokenizeLine(text, tokens, MAX_TOKENS);
-        if (n < 1)
+        if (n == 0 || n == -1)
         {
             return throwRunTImeError("empty or too long instruction", text);
         }
@@ -779,7 +803,7 @@ static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline)
             Frame& cur = callStack.peek();
             int32_t argc = n - 2;
             int32_t argVals[MAX_VARS_PER_FRAME];
-            for (int32_t i = 0; i < argc; i++)
+            for (int32_t i = 0; i < argc; i++) /*check if all variables are defined*/
             {
                 if (!getValue(cur, tokens[2 + i].text, argVals[i]))
                 {
@@ -787,7 +811,7 @@ static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline)
                 }
             }
 
-            /* jump to the call's header (the offset field was patched by resolve) */
+            /* jump to the call's header */
             if (fseek(f, static_cast<long>(field), SEEK_SET) != 0)
             {
                 return throwRunTImeError("cannot seek to the called function", text);
@@ -806,7 +830,7 @@ static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline)
             int32_t params = hn - 2;
             if (params != argc)
             {
-                return throwRunTImeError("'" + ht[1].text + "' expects " + to_string(params) + " argument(s) but got " + to_string(argc),text);
+                return throwRunTImeError("'" + ht[1].text + "' expects " + to_string(params) + " arguments but got " + to_string(argc), text);
             }
             Frame fr = Frame();
             fr.func_name = ht[1].text;
@@ -817,9 +841,9 @@ static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline)
                 fr.argv[i].value = argVals[i]; // copy in
             }
             fr.returnLine = static_cast<int32_t>(recStart); // where the call record is
-            callStack.push(fr);                             // may throw overflow_error
+            callStack.push(fr);                             /* may throw stack overflow_error from our own custome built class */
             timeline.record(buildSnapshot(callStack));
-            // the file cursor is now right after the callee's header = its first body line
+            /* the file cursor is now right after the func's header i.e its first body line */
         }
         else if (identi == "func_end")
         {
@@ -881,30 +905,209 @@ void executeProgram(const char* resolveBinPath, int64_t mainOffset, Timeline& ti
 }
 
 // PASS 0x3: SERIALIZE TIMELINE
-void writeTdbg(Timeline& timeline, const char* tdbgPath)
+static bool writeInt32(FILE* f, int32_t v)
 {
-    // placeholder for header
-    // index array of the size of stepcount from the timeline
-    // placing each snapshot in the file while maintaining the index(starting point of each nth snapshot)
-    // after timeline add the index array i the file
-    // update the header
+    return fwrite(&v, sizeof(int32_t), 1, f) == 1;
+}
+
+// length (4 bytes) followed by the characters, no '\0' (same idea as a resolve record)
+static bool writeString(FILE* f, const string& s)
+{
+    int32_t len = static_cast<int32_t>(s.size());
+    if (!writeInt32(f, len))
+    {
+        return false;
+    }
+    if (len > 0 && fwrite(s.data(), sizeof(char), s.size(), f) != s.size())
+    {
+        return false;
+    }
+    return true;
+}
+
+static bool writeVariable(FILE* f, const Variable& v)
+{
+    return writeString(f, v.name) && writeInt32(f, v.value);
+}
+
+/* Only the used slots are written : argc parameters and localCount locals */
+static bool writeFrame(FILE* f, const Frame& fr)
+{
+    if (fr.argc < 0 || fr.argc > MAX_VARS_PER_FRAME || fr.localCount < 0 || fr.localCount > MAX_VARS_PER_FRAME)
+    {
+        return false; /* corrupted frame */
+    }
+    if (!writeString(f, fr.func_name) || !writeInt32(f, fr.argc))
+    {
+        return false;
+    }
+    for (int32_t i = 0; i < fr.argc; i++)
+    {
+        if (!writeVariable(f, fr.argv[i]))
+        {
+            return false;
+        }
+    }
+    if (!writeInt32(f, fr.returnLine) || !writeInt32(f, fr.localCount))
+    {
+        return false;
+    }
+    for (int32_t i = 0; i < fr.localCount; i++)
+    {
+        if (!writeVariable(f, fr.locals[i]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Only the stackDepth real frames are written, top frame first(same order as in memory) */
+static bool writeSnapshot(FILE* f, const Snapshot* s)
+{
+    if (s == nullptr || s->stackDepth < 0 || s->stackDepth > MAX_STACK_DEPTH)
+    {
+        return false;
+    }
+    if (!writeInt32(f, s->stackDepth))
+    {
+        return false;
+    }
+    for (int32_t i = 0; i < s->stackDepth; i++)
+    {
+        if (!writeFrame(f, s->callStack[i]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Prints the error, closes the file, frees the index and returns false (used on every error path)
+static bool tdbgFail(FILE* f, int64_t* index, const string& msg)
+{
+    cerr << "Error: " << msg << endl;
+    if (f != nullptr)
+    {
+        fclose(f);
+    }
+    delete[] index; // deleting nullptr is safe
+    return false;
+}
+
+// placeholder for header
+// index array of the size of stepcount from the timeline
+// placing each snapshot in the file while maintaining the index(starting point of each nth snapshot)
+// after timeline add the index array i the file
+// update the header
+bool writeTdbg(Timeline& timeline, const char* tdbgPath)
+{
+    FILE* f = fopen(tdbgPath, "wb");
+    if (f == nullptr)
+    {
+        cerr << "Error: cannot create " << tdbgPath << endl;
+        return false;
+    }
+
+    int32_t stepCount = timeline.getStepCount();
+    int64_t* index = nullptr;
+    if (stepCount > 0)
+    {
+        index = new int64_t[stepCount]; /* index[n] = where snapshot n starts */
+    }
+
+    /* placeholder header : reserves the first 20 bytes, filled in properly at the end */
+    TTDBHeader header;
+    header.magic[0] = 'T';
+    header.magic[1] = 'T';
+    header.magic[2] = 'D';
+    header.magic[3] = 'B';
+    header.version = 1;
+    header.stepCount = 0;
+    header.indexOffset = 0;
+    if (!writeHeader(f, header))
+    {
+        return tdbgFail(f, index, "cannot write the header");
+    }
+
+    /* snapshot stream : remember where each snapshot starts, then write it */
+    int32_t i = 0;
+    for (TimelineNode* n = timeline.begin(); n != nullptr; n = n->next)
+    {
+        if (i >= stepCount)
+        {
+            return tdbgFail(f, index, "timeline has more snapshots than its step count");
+        }
+        long pos = ftell(f);
+        if (pos < 0)
+        {
+            return tdbgFail(f, index, "cannot read the file position");
+        }
+        index[i] = static_cast<int64_t>(pos);
+        if (!writeSnapshot(f, n->data))
+        {
+            return tdbgFail(f, index, "cannot write snapshot " + to_string(i));
+        }
+        i++;
+    }
+    if (i != stepCount)
+    {
+        return tdbgFail(f, index, "timeline has fewer snapshots than its step count");
+    }
+
+    /* dense index : the cursor is right after the last snapshot, so this is where it starts */
+    long indexPos = ftell(f);
+    if (indexPos < 0)
+    {
+        return tdbgFail(f, index, "cannot read the file position");
+    }
+    if (stepCount > 0 && fwrite(index, sizeof(int64_t), static_cast<size_t>(stepCount), f) != static_cast<size_t>(stepCount))
+    {
+        return tdbgFail(f, index, "cannot write the index");
+    }
+
+    /* go back and overwrite the placeholder with the real values */
+    header.stepCount = stepCount;
+    header.indexOffset = static_cast<int64_t>(indexPos);
+    if (fseek(f, 0, SEEK_SET) != 0 || !writeHeader(f, header))
+    {
+        return tdbgFail(f, index, "cannot update the header");
+    }
+
+    delete[] index;
+    fclose(f);
+    return true;
 }
 // main section
 int32_t main()
 {
-
     if (!validateProgram("source.bin"))
     {
-        // send an error response instead of a .tdbg file
+        cerr << "The Source file contains some error it did not pass the validation check\n";
         return 1;
     }
 
     int64_t mainOffset = resolveProgram("source.bin", "resolve.bin");
+    if (mainOffset < 0)
+    {
+        cerr << "An error occured while writing resolve.bin\n";
+        return 2;
+    }
 
     Timeline timeline;
     executeProgram("resolve.bin", mainOffset, timeline);
 
-    writeTdbg(timeline, "session.tdbg");
+    bool written = writeTdbg(timeline, "session.tdbg");
 
+    /* the Timeline does not own its snapshots, so we free them here, after serialization */
+    for (TimelineNode* n = timeline.begin(); n != nullptr; n = n->next)
+    {
+        delete n->data;
+    }
+
+    if (!written)
+    {
+        return 3;
+    }
     return 0;
 }

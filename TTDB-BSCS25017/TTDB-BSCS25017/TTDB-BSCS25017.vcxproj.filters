@@ -19,4 +19,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="resolve.bin">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="session.tdbg">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="source.bin">
+      <Filter>Source Files</Filter>
+    </None>
+  </ItemGroup>
 </Project>
