@@ -81,3 +81,21 @@ Decisions / assumptions made:
 Errors return ‑1. Offset 0 is valid. Therefore main must check mainOffset < 0. Call text stays the same. Only the 8‑byte offset field of the call is patched. If the call text were changed its length would. All later records would move. Non‑call records keep their offset. Call records keep 0 until patched. Patching happens after the entire file is written. This lets call records point to function records that appear later. Duplicate function names are not allowed. Nameless func or call records are also rejected. The number of arguments in a call is not checked in this pass. Binary files open, with FILE* and flags "wb+" or "rb”. All stored fields use int64_t and int32_t types.
 ```
 ---
+
+### Log 5
+```
+Date: 07 10 2026 (Afternoon)
+
+Goal of this session:
+Implement Pass 0x2 (Execution), including tokenizeLine, buildSnapshot, execution helpers, and executeProgram.
+
+What I did:
+Implemented tokenizeLine, buildSnapshot, execution helpers, executeProgram, and runProgram, including tokenization, snapshot creation, number parsing, variable lookup, operand evaluation, error handling, arithmetic operations, function calls, returns, and per-line snapshots.
+
+Problems faced:
+Worked out copy-in/copy-out for function calls, understood getValue for handling literals and variables, clarified error reporting and naming, and reviewed the fseek and main-header validation logic.
+
+Decisions / assumptions made:
+The execution records one snapshot per executed line, with func main as step 0 and call snapshots showing the new frame. returnLine stores the call record’s byte position, arguments are copied in at call and back at func_end, and literals are not copied back. set creates new locals, operands may be literals or variables, and arithmetic destinations must already exist. Runtime errors stop execution while preserving and serializing the valid partial timeline. main must be exactly func main with no parameters.
+```
+---
