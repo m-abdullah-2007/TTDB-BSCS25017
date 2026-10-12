@@ -586,8 +586,7 @@ int32_t tokenizeLine(const string& line, Token* tokens, int32_t maxTokens)
     return count;
 }
 
-/*Self Made Pass 0x2 helpers*/
-
+/*Self Made 0x2 helpers*/
 /*true if text is an integer like 10 or -5; the value goes into out*/
 static bool parseNumber(const string& text, int32_t& out)
 {
@@ -1105,7 +1104,7 @@ int32_t main()
 
     bool written = writeTdbg(timeline, "session.tdbg");
 
-    /* the Timeline does not own its snapshots, so we free them here, after serialization */
+    /* the Timeline does not own its snapshots, so we free them here, after serialization, This is our assumption for this phase */
     for (TimelineNode* n = timeline.begin(); n != nullptr; n = n->next)
     {
         delete n->data;
