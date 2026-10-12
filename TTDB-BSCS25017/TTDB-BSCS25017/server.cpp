@@ -346,14 +346,14 @@ bool validateProgram(const char* sourcePath) // for each func defined there shou
 // PASS 0x1: RESOLVE() -> resolve.bin
 // writes one [offset(8B)][size(4B)][string] record at the current file position
 // returns this record's own starting byte position
-int64_t writeResolveRecord(FILE* f, int64_t offsetField, const string& text)
+int64_t writeResolveRecord(FILE* f, int64_t offsetField, const string& text) /*writes resolve.bin*/
 {
-    /*Check pointer passed properly*/
+    /*Pointer pass check*/
     if (f == nullptr) {
         return -1;
     }
     /* Write byte offset of 8 bytes (int64_t)*/
-    int64_t start = static_cast<int64_t>(ftell(f));
+    int64_t start = static_cast<int64_t>(ftell(f)); /*ftell() returns long*/
     if (fwrite(&offsetField, sizeof(int64_t), 1, f) != 1) {
         return -1;
     }
@@ -362,8 +362,9 @@ int64_t writeResolveRecord(FILE* f, int64_t offsetField, const string& text)
     if (fwrite(&len, sizeof(int32_t), 1, f) != 1) {
         return -1;
     }
-    /*Check to enforce if the string is not empty or is not written properly*/
-    if (len > 0 && fwrite(text.data(), sizeof(char), text.size(), f) != text.size()) {
+    /*Check to enforce if the string is not written properly*/
+    /*empty string check is made while reading code from source.bin*/
+    if (fwrite(text.data(), sizeof(char), text.size(), f) != text.size()) {
         return -1;
     }
     return start;
@@ -373,34 +374,29 @@ int64_t readResolveRecord(FILE* f, string& outText) // reads one record at the c
     if (f == nullptr) {
         return -1;
     }
-    int64_t offsetRead = 0;
-
+    int64_t offsetRead{};
     /* return -1 from here means end of file i.e no more functions exist in resolve.bin */
     if (fread(&offsetRead, sizeof(int64_t), 1, f) != 1)
     {
         return -1;
     }
-
     /*return -1 from here means corrupted file*/
-    int32_t strSize = 0;
+    int32_t strSize{};
     if (fread(&strSize, sizeof(int32_t), 1, f) != 1)
     {
         return -1;
     }
-
     /* return -1 from here means nonsense size */
     if (strSize < 0 || static_cast<uint64_t>(strSize) > MAX_SOURCE_BYTES)
     {
         return -1;
     }
-
     /* return -1 here means the file ended before all strSize text bytes were read */
     outText.resize(static_cast<size_t>(strSize));
     if (strSize > 0 && fread(&outText[0], sizeof(char), static_cast<size_t>(strSize), f) != static_cast<size_t>(strSize))
     {
         return -1;
     }
-
     return offsetRead;
 }
 
@@ -446,27 +442,26 @@ int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
     PendingPatch* patches = new PendingPatch[MAX_PATCHES];
     int32_t patchCount = 0;
 
-    ifstream Rdr(sourcePath);
+    ifstream Rdr(sourcePath); /*opens source.bin in txt mode*/
     if (!Rdr) {
         cerr << "Cannot open Source file: " << sourcePath << endl;
         return -1;
     }
+    /*opens resolve.bin in binary mode*/
     FILE* f = fopen(resolveBinPath, "wb+"); /*need + so we can seek back and patch as it open files for reading too*/
     if (f == nullptr) {
         cerr << "Cannot open or create resolve file: " << resolveBinPath << endl;
         return -1;
     }
-
     /*write every line as a record form source.bin*/
-    int64_t offset = 0;
-    int32_t lineNo = 0; // counts non-blank lines
+    int64_t offset{};
+    int32_t lineNo = 0; /* counts non - blank lines */
     string line;
-    while (readSourceLine(Rdr, line))
+    while (readSourceLine(Rdr, line))  /*used to write resolve.record*/
     {
         lineNo++;
         string word = firstWord(line);
-        int64_t offsetField = offset; // normal lines hold their own offset
-
+        int64_t offsetField = offset; /* normal lines hold their own offset */
         if (word == "func")
         {
             string name = secondWord(line);
@@ -519,10 +514,10 @@ int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
         {
             return throwResolveError(f, "call to undefined function '" + patches[i].targetFuncName + "'");
         }
-        if (fseek(f, static_cast<long>(patches[i].byteOffsetOfOffsetField), SEEK_SET) != 0)
+        if (fseek(f, static_cast<long>(patches[i].byteOffsetOfOffsetField), SEEK_SET) != 0) /*SEEK_SET is the origin of file*/  /*return 0 from fseek() means that the seek succeeded*/
         {
             return throwResolveError(f, "seek failed while patching calls");
-        }
+        } 
         int64_t target = funcArray[idx].byteOffsetInResolveBin;
         if (fwrite(&target, sizeof(int64_t), 1, f) != 1)
         {
