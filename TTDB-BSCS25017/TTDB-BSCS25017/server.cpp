@@ -22,9 +22,9 @@ using namespace std;
 const int32_t MAX_VARS_PER_FRAME = 16;
 const int32_t MAX_STACK_DEPTH = 64; /*used for call stack*/
 const int32_t MAX_FUNCS = 128;
-const int32_t MAX_TOKENS = MAX_VARS_PER_FRAME + 2; // kW + func_name + upto 16 params/args
+const int32_t MAX_TOKENS = MAX_VARS_PER_FRAME + 2; // Caller + func_name + upto 16 params/args
 const int32_t MAX_PATCHES = MAX_FUNCS * 4;
-const uint64_t MAX_SOURCE_BYTES = 15ULL * 1024 * 1024; // sanity cap on the declared file length
+const uint64_t MAX_SOURCE_BYTES = 15ULL * 1024 * 1024;      // sanity cap on the declared file length
 const int32_t IO_BUFFER_SIZE = 64 * 1024;                  // fixed buffer for streaming to/from disk
 const int32_t SOCKET_TIMEOUT_SEC = 5;                      // TODO: apply as SO_RCVTIMEO so a deadclient can't hang the server forever
 
@@ -113,7 +113,7 @@ public:
 };
 
 struct Snapshot; // fwd declaration;
-struct TimelineNode
+struct TimelineNode  /*Doubly Linked Node*/
 {
     Snapshot* data;
     TimelineNode* next;
@@ -122,7 +122,8 @@ struct TimelineNode
 // Timeline : doubly linked list of Snapshots
 class Timeline
 {
-    TimelineNode* head, * tail;
+    TimelineNode* head;
+    TimelineNode* tail;
     int32_t stepCount;
 
 public:
@@ -173,26 +174,26 @@ struct Variable
 struct Frame
 {
     string func_name;
-    int32_t argc;
-    Variable argv[MAX_VARS_PER_FRAME];
-    int32_t returnLine;
-    Variable locals[MAX_VARS_PER_FRAME];
-    int32_t localCount;
+    int32_t argc; /*number of parameters*/
+    Variable argv[MAX_VARS_PER_FRAME];  /*array of parameters*/
+    int32_t returnLine; /*offset of line from which function is returned*/
+    Variable locals[MAX_VARS_PER_FRAME];  /*array of variables created inside function*/
+    int32_t localCount;  /*count of local variables*/
 };
 struct Snapshot
 {
-    Frame callStack[MAX_STACK_DEPTH];
-    int32_t stackDepth;
+    Frame callStack[MAX_STACK_DEPTH]; /*additive one instance of a function call i.e one line*/
+    int32_t stackDepth; /*current size of stack*/
 };
 
 Snapshot* buildSnapshot(Stack<Frame>& callStack)
 {
-    Snapshot* snap = new Snapshot(); /*heap: a Snapshot is far too big for the stack and will also be  returned after this function ends*/
+    Snapshot* snap = new Snapshot(); /*heap: a Snapshot is far too big for  stack DS and will also be  returned after this function ends*/
     snap->stackDepth = callStack.snapshot_into(snap->callStack, MAX_STACK_DEPTH);
     return snap;
 }
 
-struct TTDBHeader
+struct TTDBHeader /*placeholder struct for header*/
 {
     char magic[4]; // "TTDB"
     int32_t version;
@@ -208,19 +209,19 @@ bool writeHeader(FILE* f, const TTDBHeader& h)
     {
         return false;
     }
-    if (fwrite(h.magic, sizeof(char), 4, f) != 4)
+    if (fwrite(h.magic, sizeof(char), 4, f) != 4)  /*writes magic string*/
     {
         return false;
     }
-    if (fwrite(&h.version, sizeof(int32_t), 1, f) != 1)
+    if (fwrite(&h.version, sizeof(int32_t), 1, f) != 1)  /*writes version*/
     {
         return false;
     }
-    if (fwrite(&h.stepCount, sizeof(int32_t), 1, f) != 1)
+    if (fwrite(&h.stepCount, sizeof(int32_t), 1, f) != 1) /*writes stepcount*/
     {
         return false;
     }
-    if (fwrite(&h.indexOffset, sizeof(int64_t), 1, f) != 1)
+    if (fwrite(&h.indexOffset, sizeof(int64_t), 1, f) != 1) /*writes index offset from where dense indexes start*/
     {
         return false;
     }
@@ -240,11 +241,11 @@ struct PendingPatch
 };
 
 /*Self Made Helpers for 0x0*/
-static bool isSpaceChar(char c)
+static bool isSpaceChar(char c)  /*detects white space characters*/
 {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
-static string nextWord(const string& line, size_t& i)
+static string nextWord(const string& line, size_t& i)  /*return the next word in a string after the index passed " i " */
 {
     /*skips all whitespace*/
     while (i < line.size() && isSpaceChar(line[i])) {
@@ -262,26 +263,36 @@ static string nextWord(const string& line, size_t& i)
 bool readSourceLine(ifstream& in, string& out) // reads the next non blank line
 {
     string line;
-    while (getline(in, line))
-    {
-        size_t end = line.find_last_not_of(" \t\r\n");
-        if (end == string::npos)
-            continue; // blank line
-        line.erase(end + 1);
-        line.erase(0, line.find_first_not_of(" \t"));
-        out = line;
-        return true;
+    bool isNotBlank = false;
+
+    /*Skips the blank lines*/
+    while (!isNotBlank && getline(in, line)) {
+        if (line.find_first_not_of(" \t\r\n") != string::npos)
+        {
+            isNotBlank = true;
+        }
     }
-    return false;
+    /* reached the end of the file without finding a usable line */
+    if (!isNotBlank)
+    {
+        return false; 
+    }
+    /*trim the line found*/
+    size_t end = line.find_last_not_of(" \t\r\n");
+    size_t start = line.find_first_not_of(" \t\r\n");
+    out = line.substr(start, end - start + 1);
+    return true;
 }
 
 string firstWord(const string& line) //returns first word from the input string
 {
+    /*we use it to check if first word is func for function definition or if it is call for func call*/
     size_t i = 0;
     return nextWord(line, i);
 }
 string secondWord(const string& line) // returns the second word
 {
+    /*we use it to check second word like func name in definition or what function is called in func call*/
     size_t i = 0;
     nextWord(line, i); /*discarding the first word*/
     return nextWord(line, i);
@@ -291,22 +302,22 @@ bool validateProgram(const char* sourcePath) // for each func defined there shou
 {
     ifstream Rdr(sourcePath);
     if (!Rdr) {
-        cerr << "Error: Cannot Open File " << sourcePath << endl;
+        cerr << "Error: Cannot Open File " << sourcePath << endl; /*stream error*/
         return false;
     }
-    bool funcOpen = false;   /*true while a func is open(depth is only ever 0 or 1)*/
+    bool funcOpen = false;   /*true while a func is open(depth is only 0 or 1 at any time)*/
     int32_t funcLineNo = 0;  /*line number of the currently open func*/
-    int32_t lineNo = 0;        /*counts non - blank lines only*/
+    int32_t lineNo = 0;      /*counts non - blank lines only*/
     string currLine;
 
-    while (readSourceLine(Rdr, currLine))
+    while (readSourceLine(Rdr, currLine)) /*blank lines are skipped in this function*/
     {
         lineNo++;
         string word = firstWord(currLine);
 
         if (word == "func")
         {
-            if (funcOpen)
+            if (funcOpen) /*nested function declaration not allowed*/
             {
                 cerr << "Error: nested function declaration at line " << lineNo << " (function opened at line " << funcLineNo << " is not closed)" << endl;
                 return false;
@@ -314,7 +325,7 @@ bool validateProgram(const char* sourcePath) // for each func defined there shou
             funcOpen = true;
             funcLineNo = lineNo;
         }
-        else if (word == "func_end")
+        else if (word == "func_end") /*func_end used without opening a func*/
         {
             if (!funcOpen)
             {
@@ -324,7 +335,7 @@ bool validateProgram(const char* sourcePath) // for each func defined there shou
             funcOpen = false;
         }
     }
-    if (funcOpen)
+    if (funcOpen) /*func used without ever ending it*/
     {
         cerr << "Error: func at line " << funcLineNo << " has no matching func_end" << endl;
         return false;
