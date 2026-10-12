@@ -117,3 +117,21 @@ Decisions / assumptions made:
 The .tdbg format uses version 1, little-endian values, and top-first frame ordering. Only used slots are serialized, requiring a dense index. writeHeader and writeTdbg return bool for error handling, while runtime errors preserve and serialize the partial timeline and still return 0. Errors use cerr, main() frees snapshots after serialization, and source.bin is read from the program’s working directory.
 ```
 ---
+
+### Log 7
+```
+Date: 12 10 2026
+
+Goal of this session:
+Implement Pass 0x3 (Serialization), wire up main(), and test the whole pipeline end to end on a sample C-- program with nested calls.
+
+What I did:
+Designed the .tdbg format, implemented snapshot serialization and helper functions, completed writeHeader and writeTdbg with indexing and header patching, updated main() error codes and memory cleanup, and created an end-to-end nested-call sample program.
+
+Problems faced:
+Understood indexOffset as the byte position where the index begins, which is patched after writing all variable-sized snapshots. The index enables direct access to any snapshot, structs must be serialized field-by-field, and hex viewers may display bytes differently even when the underlying data is identical.
+
+Decisions / assumptions made:
+The .tdbg format uses version 1, little-endian values, and top-first frame ordering. Only used slots are serialized, requiring a dense index. writeHeader and writeTdbg return bool for error handling, while runtime errors preserve and serialize the partial timeline and still return 0. Errors use cerr, main() frees snapshots after serialization, and source.bin is read from the program’s working directory.
+```
+---
