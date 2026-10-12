@@ -123,15 +123,15 @@ The .tdbg format uses version 1, little-endian values, and top-first frame order
 Date: 12 10 2026
 
 Goal of this session:
-Implement Pass 0x3 (Serialization), wire up main(), and test the whole pipeline end to end on a sample C-- program with nested calls.
+Test the TTDB pipeline end to end on Linux using WSL, verify the generated binary files, and improve code readability and maintainability.
 
 What I did:
-Designed the .tdbg format, implemented snapshot serialization and helper functions, completed writeHeader and writeTdbg with indexing and header patching, updated main() error codes and memory cleanup, and created an end-to-end nested-call sample program.
+Compiled and tested the complete pipeline on Ubuntu using WSL, GCC 15.2.0, and C++17 with a sample C-- program involving assignments, arithmetic, and nested calls. Verified successful execution and inspected resolve.bin and session.tdbg.
 
 Problems faced:
-Understood indexOffset as the byte position where the index begins, which is patched after writing all variable-sized snapshots. The index enables direct access to any snapshot, structs must be serialized field-by-field, and hex viewers may display bytes differently even when the underlying data is identical.
+Understood indexOffset, snapshot indexing, and field-by-field struct serialization. Learned Linux compilation using GCC with C++17 and how hex viewers may display identical binary data differently.
 
 Decisions / assumptions made:
-The .tdbg format uses version 1, little-endian values, and top-first frame ordering. Only used slots are serialized, requiring a dense index. writeHeader and writeTdbg return bool for error handling, while runtime errors preserve and serialize the partial timeline and still return 0. Errors use cerr, main() frees snapshots after serialization, and source.bin is read from the program’s working directory.
+Implemented .tdbg version 1 serialization using little-endian values, top-first frame ordering, and a dense index for used slots. Added error handling through writeHeader and writeTdbg, preserved partial timelines after runtime errors, and ensured snapshot cleanup after serialization. Confirmed that source.bin is read from the working directory and errors are reported using cerr.
 ```
 ---
