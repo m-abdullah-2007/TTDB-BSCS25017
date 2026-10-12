@@ -1,0 +1,11 @@
+func main
+set a 10
+set b 20
+call addNumbers a b
+add a 5
+func_end
+
+func addNumbers x y
+add x y
+add y 10
+func_end
