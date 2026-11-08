@@ -16,6 +16,7 @@
 #include <cstdio>
 /*included by me*/
 #include<stdexcept>
+#include "helper.h"
 using namespace std;
 
 // ---- Constants ----
@@ -227,18 +228,6 @@ bool writeHeader(FILE* f, const TTDBHeader& h)
     }
     return true;
 }
-
-// resolve.bin - bookkeeping
-struct FuncEntry
-{
-    string funcName;
-    int64_t byteOffsetInResolveBin; // where this function's FUNC header record sits
-};
-struct PendingPatch
-{
-    int64_t byteOffsetOfOffsetField; // where in resolve.bin to seek back and overwrite
-    string targetFuncName;
-};
 
 /*Self Made Helpers for 0x0*/
 static bool isSpaceChar(char c)  /*detects white space characters*/
