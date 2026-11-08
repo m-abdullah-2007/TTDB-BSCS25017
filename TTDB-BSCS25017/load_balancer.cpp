@@ -35,6 +35,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "helper.h"
+#include "stdexcept"
 using namespace std;
 
 
@@ -62,34 +63,51 @@ class Queue
     };
     Node *front, *rear;
     int count;
-
-
 public:
-    // Implement these functions:
-    Queue()
-    {
-
-    }
+    // Constructor
+    Queue() : front(nullptr), rear(nullptr), count(0) {}
+    // avoids memory leak in case of shallow copying
+    Queue(const Queue &) = delete;
+    Queue &operator=(const Queue &) = delete;
+    // Destructor
     ~Queue()
     {
-
+        while (front != nullptr)
+        {
+            Node *temp = front;
+            front = front->next;
+            delete temp;
+        }
     }
     void enqueue(const T &val)
     {
-
+        Node *temp = new Node{val, nullptr};
+        if (rear == nullptr)
+            front = rear = temp;
+        else
+        {
+            rear->next = temp;
+            rear = temp;
+        }
+        count++;
     }
+
     T dequeue()
     {
+        if (front == nullptr)
+            throw underflow_error("Queue is empty");
+        Node *temp = front;
+        T val = temp->data;
+        front = front->next;
+        if (front == nullptr)
+            rear = nullptr;
+        delete temp;
+        count--;
+        return val;
+    }
 
-    }
-    bool isEmpty()
-    {
-        
-    }
-    int size()
-    {
-
-    }
+    bool isEmpty() const { return front == nullptr; }
+    int size() const { return count; }
 };
 
 struct ClientInfo
