@@ -39,33 +39,11 @@ int LB_PORT = 5000;
 const int MAX_VARS_PER_FRAME = 16;
 const int MAX_STACK_DEPTH = 64;
 
-
 // ---- Structs (same as Phase 1, so the file can be read back exactly as it was written) ----
-struct Variable
-{
-    string name;
-    int32_t value;
-};
-struct Frame
-{
-    string func_name;
-    int32_t argc;
-    Variable argv[MAX_VARS_PER_FRAME];
-    int32_t returnLine;
-    Variable locals[MAX_VARS_PER_FRAME];
-    int32_t localCount;
-};
 struct Snapshot
 {
     Frame callStack[MAX_STACK_DEPTH];
     int32_t stackDepth;
-};
-struct TTDBHeader 
-{
-    char magic[4]; // "TTDB"
-    int32_t version;
-    int32_t stepCount;
-    int64_t indexOffset;
 };
 
 // ---- Structs only the client needs ----
@@ -75,11 +53,12 @@ struct TdbgReader
     TTDBHeader header;
     vector<int64_t> index;
 };
+
 struct DebugSession
 {
-    int active_flag;     // false until a "start" has worked
-    TdbgReader reader;   // the .tdbg file stays open for the whole session
-    int64_t currentStep; 
+    int active_flag;   // false until a "start" has worked
+    TdbgReader reader; // the .tdbg file stays open for the whole session
+    int64_t currentStep;
 };
 
 // =============================================================================================
@@ -142,7 +121,6 @@ Snapshot *readSnapshotAt(TdbgReader &r, int32_t step)
 
 void initSession(DebugSession &s)
 {
-   
 }
 void closeSession(DebugSession &s)
 {
@@ -177,7 +155,7 @@ bool cmdStart(DebugSession &s, const string &sourcePath)
 bool cmdNext(DebugSession &s) {}
 bool cmdPrv(DebugSession &s) {}
 bool cmdJmpNext(DebugSession &s, int32_t n) {}
-bool cmdJmpPrv(DebugSession &s, int32_t n) { }
+bool cmdJmpPrv(DebugSession &s, int32_t n) {}
 
 // =============================================================================================
 // PART E: PRINTING
@@ -211,7 +189,7 @@ bool runCommand(DebugSession &s, const string &line, bool &quitRequested)
 }
 int main(int argc, char *argv[])
 {
-    // you get string LB_HOST and int LB_PORT = 0 in arguments of this main function. 
+    // you get string LB_HOST and int LB_PORT = 0 in arguments of this main function.
 
     // DebugSession session; initSession(session);
     // Print a short welcome and the help text.
@@ -221,5 +199,4 @@ int main(int argc, char *argv[])
     //
     // After the loop: closeSession(session) and return 0.
     // Never exit the loop because of an error. Only quit or the end of the input leaves it.
-
 }
