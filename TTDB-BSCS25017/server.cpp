@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include "helper.h"
 #include <cstring> // for memcpy
+#include <vector>
 using namespace std;
 
 // ---- Constants ----
@@ -968,16 +969,92 @@ bool processSource(string &err)
 
     return ok;
 }
+/**/
+bool receiveUpload(int clientSock, const char *path, string &err)
+{
+    // a client that goes silent will make recv() fail instead of blocking forever
+    timeval tv{};
+    tv.tv_sec = SOCKET_TIMEOUT_SEC;
+    setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-// main section
-int main()
+    FILE *f = fopen(path, "wb");
+    if (!f)
+    {
+        err = "server could not create source file";
+        return false;
+    }
+
+    TrailerChecker chk;
+    vector<char> in(IO_BUFFER_SIZE), out(IO_BUFFER_SIZE);
+    bool gotStatus = false;
+    uint64_t bodyBytes = 0;
+    ssize_t r;
+
+    while ((r = recv(clientSock, in.data(), in.size(), 0)) > 0)
+    {
+        size_t m = chk.feed(in.data(), (size_t)r, out.data());
+        size_t start = 0;
+        if (!gotStatus && m > 0)
+        {
+            gotStatus = true; // the first released byte is the status byte, skip it
+            start = 1;
+        }
+        bodyBytes += (m - start);
+        if (bodyBytes > MAX_SOURCE_BYTES)
+        {
+            fclose(f);
+            err = "source file too large";
+            return false;
+        }
+        if (m > start)
+            fwrite(out.data() + start, 1, m - start, f);
+    }
+    fclose(f);
+
+    if (r < 0)
+    {
+        err = "socket error or timeout while receiving";
+        return false;
+    }
+    if (!chk.verify())
+    {
+        err = "upload checksum mismatch";
+        return false;
+    }
+    return true;
+}
+
+void serveClient(int clientSock)
 {
     string err;
-    if (!processSource(err))
+    if (!receiveUpload(clientSock, "source.bin", err) || !processSource(err))
     {
-        cerr << err << endl;
+        sendTextMessage(clientSock, STATUS_ERROR, err);
+        return;
+    }
+    if (!sendFileMessage(clientSock, STATUS_OK, "session.tdbg"))
+        cerr << "failed to send session.tdbg\n";
+}
+
+// main
+int32_t main(int argc, char *argv[])
+{
+    if (argc < 2)
+    {
+        cerr << "usage: " << argv[0] << " <port>\n";
         return 1;
     }
-    cout << "session.tdbg written\n";
-    return 0;
+    int listenSock = createListenSocket(atoi(argv[1]));
+
+    while (true)
+    {
+        int c = accept(listenSock, nullptr, nullptr);
+        if (c < 0)
+        {
+            perror("accept");
+            continue;
+        }
+        serveClient(c);
+        close(c);
+    }
 }
