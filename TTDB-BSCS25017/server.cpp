@@ -17,6 +17,7 @@
 /*included by me*/
 #include <stdexcept>
 #include "helper.h"
+#include <cstring> // for memcpy
 using namespace std;
 
 // ---- Constants ----
@@ -185,29 +186,12 @@ Snapshot *buildSnapshot(Stack<Frame> &callStack)
 
 /* Header = magic(4) + version(4) + stepCount(4) + indexOffset(8) = 20 bytes. */
 /* Each field is written on its own, never the whole struct, so no padding bytes reach the file. */
-bool writeHeader(FILE *f, const TTDBHeader &h)
+void writeHeader(FILE *f, const TTDBHeader &h)
 {
-    if (f == nullptr)
-    {
-        return false;
-    }
-    if (fwrite(h.magic, sizeof(char), 4, f) != 4) /*writes magic string*/
-    {
-        return false;
-    }
-    if (fwrite(&h.version, sizeof(int32_t), 1, f) != 1) /*writes version*/
-    {
-        return false;
-    }
-    if (fwrite(&h.stepCount, sizeof(int32_t), 1, f) != 1) /*writes stepcount*/
-    {
-        return false;
-    }
-    if (fwrite(&h.indexOffset, sizeof(int64_t), 1, f) != 1) /*writes index offset from where dense indexes start*/
-    {
-        return false;
-    }
-    return true;
+    fwrite(h.magic, 1, 4, f);
+    fwrite(&h.version, sizeof(int32_t), 1, f);
+    fwrite(&h.stepCount, sizeof(int32_t), 1, f);
+    fwrite(&h.indexOffset, sizeof(int64_t), 1, f);
 }
 
 /*Self Made Helpers for 0x0*/
@@ -271,47 +255,48 @@ string secondWord(const string &line) // returns the second word
     return nextWord(line, i);
 }
 
-bool validateProgram(const char *sourcePath) // for each func defined there should be exactly one func_end and no nested funcs allowed -
+bool validateProgram(const char *sourcePath, string &err)
 {
     ifstream Rdr(sourcePath);
     if (!Rdr)
     {
-        cerr << "Error: Cannot Open File " << sourcePath << endl; /*stream error*/
+        err = "server cannot open the source file";
         return false;
     }
-    bool funcOpen = false;  /*true while a func is open(depth is only 0 or 1 at any time)*/
-    int32_t funcLineNo = 0; /*line number of the currently open func*/
-    int32_t lineNo = 0;     /*counts non - blank lines only*/
+    bool funcOpen = false;
+    int32_t funcLineNo = 0;
+    int32_t lineNo = 0;
     string currLine;
 
-    while (readSourceLine(Rdr, currLine)) /*blank lines are skipped in this function*/
+    while (readSourceLine(Rdr, currLine))
     {
         lineNo++;
         string word = firstWord(currLine);
 
         if (word == "func")
         {
-            if (funcOpen) /*nested function declaration not allowed*/
+            if (funcOpen)
             {
-                cerr << "Error: nested function declaration at line " << lineNo << " (function opened at line " << funcLineNo << " is not closed)" << endl;
+                err = "nested function declaration at line " + to_string(lineNo) +
+                      " (func at line " + to_string(funcLineNo) + " is not closed)";
                 return false;
             }
             funcOpen = true;
             funcLineNo = lineNo;
         }
-        else if (word == "func_end") /*func_end used without opening a func*/
+        else if (word == "func_end")
         {
             if (!funcOpen)
             {
-                cerr << "Error: func_end has no matching func at line " << lineNo << endl;
+                err = "func_end has no matching func at line " + to_string(lineNo);
                 return false;
             }
             funcOpen = false;
         }
     }
-    if (funcOpen) /*func used without ever ending it*/
+    if (funcOpen)
     {
-        cerr << "Error: func at line " << funcLineNo << " has no matching func_end" << endl;
+        err = "func at line " + to_string(funcLineNo) + " has no matching func_end";
         return false;
     }
     return true;
@@ -401,61 +386,51 @@ static int32_t funcFind(const FuncEntry funcArr[], int32_t funcCt, const string 
     return -1;
 }
 
-static int64_t throwResolveError(FILE *f, const string &msg)
+static int64_t throwResolveError(FILE *f, string &err, const string &msg)
 {
-    cerr << "Error: " << msg << endl;
+    err = msg;
     if (f != nullptr)
-    {
         fclose(f);
-    }
     return -1;
 }
 
-int64_t resolveProgram(const char *sourcePath, const char *resolveBinPath)
+int64_t resolveProgram(const char *sourcePath, const char *resolveBinPath, string &err)
 {
-    /*the stack was getting too big of the function so heap was used*/
-    FuncEntry *funcArray = new FuncEntry[MAX_FUNCS];
+    vector<FuncEntry> funcArray(MAX_FUNCS);
     int32_t funcCount = 0;
-    PendingPatch *patches = new PendingPatch[MAX_PATCHES];
+    vector<PendingPatch> patches(MAX_PATCHES);
     int32_t patchCount = 0;
 
-    ifstream Rdr(sourcePath); /*opens source.bin in txt mode*/
+    ifstream Rdr(sourcePath);
     if (!Rdr)
     {
-        cerr << "Cannot open Source file: " << sourcePath << endl;
+        err = "server cannot open the source file";
         return -1;
     }
-    /*opens resolve.bin in binary mode*/
-    FILE *f = fopen(resolveBinPath, "wb+"); /*need + so we can seek back and patch as it open files for reading too*/
+    FILE *f = fopen(resolveBinPath, "wb+");
     if (f == nullptr)
     {
-        cerr << "Cannot open or create resolve file: " << resolveBinPath << endl;
+        err = "server cannot create resolve.bin";
         return -1;
     }
-    /*write every line as a record form source.bin*/
+
     int64_t offset{};
-    int32_t lineNo = 0; /* counts non - blank lines */
+    int32_t lineNo = 0;
     string line;
-    while (readSourceLine(Rdr, line)) /*used to write resolve.record*/
+    while (readSourceLine(Rdr, line))
     {
         lineNo++;
         string word = firstWord(line);
-        int64_t offsetField = offset; /* normal lines hold their own offset */
+        int64_t offsetField = offset;
         if (word == "func")
         {
             string name = secondWord(line);
             if (name.empty())
-            {
-                return throwResolveError(f, "function without a name at line " + to_string(lineNo));
-            }
+                return throwResolveError(f, err, "function without a name at line " + to_string(lineNo));
             if (funcCount >= MAX_FUNCS)
-            {
-                return throwResolveError(f, "too many functions (max " + to_string(MAX_FUNCS) + ")");
-            }
-            if (funcFind(funcArray, funcCount, name) != -1)
-            {
-                return throwResolveError(f, "duplicate function '" + name + "' at line " + to_string(lineNo));
-            }
+                return throwResolveError(f, err, "too many functions (max " + to_string(MAX_FUNCS) + ")");
+            if (funcFind(funcArray.data(), funcCount, name) != -1)
+                return throwResolveError(f, err, "duplicate function '" + name + "' at line " + to_string(lineNo));
             funcArray[funcCount].funcName = name;
             funcArray[funcCount].byteOffsetInResolveBin = offset;
             funcCount++;
@@ -464,57 +439,41 @@ int64_t resolveProgram(const char *sourcePath, const char *resolveBinPath)
         {
             string target = secondWord(line);
             if (target.empty())
-            {
-                return throwResolveError(f, "call without a function name at line " + to_string(lineNo));
-            }
+                return throwResolveError(f, err, "call without a function name at line " + to_string(lineNo));
             if (patchCount >= MAX_PATCHES)
-            {
-                return throwResolveError(f, "too many calls (max " + to_string(MAX_PATCHES) + ")");
-            }
-            patches[patchCount].byteOffsetOfOffsetField = offset; /* the offset field is the first 8 bytes of the record */
+                return throwResolveError(f, err, "too many calls (max " + to_string(MAX_PATCHES) + ")");
+            patches[patchCount].byteOffsetOfOffsetField = offset;
             patches[patchCount].targetFuncName = target;
             patchCount++;
-            offsetField = 0; // placeholder, patched below
+            offsetField = 0;
         }
 
         int64_t start = writeResolveRecord(f, offsetField, line);
         if (start != offset)
-        {
-            return throwResolveError(f, "write failed or offset mismatch at line " + to_string(lineNo));
-        }
-        offset += 8 + 4 + static_cast<int64_t>(line.size()); /* next record offset */
+            return throwResolveError(f, err, "write failed or offset mismatch at line " + to_string(lineNo));
+        offset += 8 + 4 + static_cast<int64_t>(line.size());
     }
 
-    /* patch every call with its func offset */
     for (int32_t i = 0; i < patchCount; i++)
     {
-        int32_t idx = funcFind(funcArray, funcCount, patches[i].targetFuncName);
+        int32_t idx = funcFind(funcArray.data(), funcCount, patches[i].targetFuncName);
         if (idx == -1)
-        {
-            return throwResolveError(f, "call to undefined function '" + patches[i].targetFuncName + "'");
-        }
-        if (fseek(f, static_cast<long>(patches[i].byteOffsetOfOffsetField), SEEK_SET) != 0) /*SEEK_SET is the origin of file*/ /*return 0 from fseek() means that the seek succeeded*/
-        {
-            return throwResolveError(f, "seek failed while patching calls");
-        }
+            return throwResolveError(f, err, "call to undefined function '" + patches[i].targetFuncName + "'");
+        if (fseek(f, static_cast<long>(patches[i].byteOffsetOfOffsetField), SEEK_SET) != 0)
+            return throwResolveError(f, err, "seek failed while patching calls");
         int64_t target = funcArray[idx].byteOffsetInResolveBin;
         if (fwrite(&target, sizeof(int64_t), 1, f) != 1)
-        {
-            return throwResolveError(f, "write failed while patching calls");
-        }
+            return throwResolveError(f, err, "write failed while patching calls");
     }
-    int32_t mainIdx = funcFind(funcArray, funcCount, "main");
+
+    int32_t mainIdx = funcFind(funcArray.data(), funcCount, "main");
     if (mainIdx == -1)
-    {
-        return throwResolveError(f, "no main function");
-    }
+        return throwResolveError(f, err, "main function not found");
+
     int64_t mainOffset = funcArray[mainIdx].byteOffsetInResolveBin;
     fclose(f);
-    delete[] funcArray;
-    delete[] patches;
     return mainOffset;
 }
-
 // PASS 0x2: EXECUTION (tokenization happens here)
 enum TokenType
 {
@@ -645,9 +604,11 @@ static bool getValue(Frame &fr, const string &text, int32_t &out)
     return true;
 }
 
+static string lastRunError;
+
 static bool throwRunTImeError(const string &msg, const string &instruction)
 {
-    cerr << "Runtime error: " << msg << " (Instruction: " << instruction << ")" << endl;
+    lastRunError = "runtime error: " + msg + " (instruction: " + instruction + ")";
     return false;
 }
 
@@ -655,7 +616,7 @@ static bool throwRunTImeError(const string &msg, const string &instruction)
 static bool runProgram(FILE *f, int64_t mainOffset, Timeline &timeline) /*Time Line is passed by reference so snapshots recorded here stay visible and we also delete timeline's copy constructor and assignment operator*/
 {                                                                       /*main offset returned by resolveProgram*/
     Stack<Frame> callStack;
-    Token *tokens = new Token[MAX_TOKENS];
+    Token tokens[MAX_TOKENS];
     string text; /*raw line entry*/
 
     /* main's header: must be exactly "func main" */
@@ -869,23 +830,32 @@ static bool runProgram(FILE *f, int64_t mainOffset, Timeline &timeline) /*Time L
     }
 }
 
-void executeProgram(const char *resolveBinPath, int64_t mainOffset, Timeline &timeline)
+bool executeProgram(const char *resolveBinPath, int64_t mainOffset, Timeline &timeline, string &err)
 {
+    lastRunError.clear();
     FILE *f = fopen(resolveBinPath, "rb");
     if (f == nullptr)
     {
-        cerr << "Error: cannot open " << resolveBinPath << endl;
-        return;
+        err = "server cannot open resolve.bin";
+        return false;
     }
+    bool ok = false;
     try
     {
-        runProgram(f, mainOffset, timeline);
+        ok = runProgram(f, mainOffset, timeline);
+        if (!ok)
+            err = lastRunError;
     }
-    catch (const exception &e) // e.g. the stack's overflow_error on runaway recursion
+    catch (const overflow_error &)
     {
-        cerr << "Runtime error: " << e.what() << endl;
+        err = "runtime error: call stack overflow (max depth " + to_string(MAX_STACK_DEPTH) + ")";
+    }
+    catch (const exception &e)
+    {
+        err = string("runtime error: ") + e.what();
     }
     fclose(f);
+    return ok;
 }
 
 // PASS 0x3: SERIALIZE TIMELINE
@@ -895,76 +865,38 @@ static bool writeInt32(FILE *f, int32_t v)
 }
 
 // length (4 bytes) followed by the characters, no '\0' (same idea as a resolve record)
-static bool writeString(FILE *f, const string &s)
+void writeString(FILE *f, const string &s)
 {
-    int32_t len = static_cast<int32_t>(s.size());
-    if (!writeInt32(f, len))
-    {
-        return false;
-    }
-    if (len > 0 && fwrite(s.data(), sizeof(char), s.size(), f) != s.size())
-    {
-        return false;
-    }
-    return true;
+    int32_t len = (int32_t)s.size();
+    fwrite(&len, sizeof(int32_t), 1, f);
+    if (len > 0)
+        fwrite(s.data(), 1, len, f);
 }
-
-static bool writeVariable(FILE *f, const Variable &v)
+void writeVariable(FILE *f, const Variable &v)
 {
-    return writeString(f, v.name) && writeInt32(f, v.value);
+    writeString(f, v.name);
+    fwrite(&v.value, sizeof(int32_t), 1, f);
 }
 
 /* Only the used slots are written : argc parameters and localCount locals */
-static bool writeFrame(FILE *f, const Frame &fr)
+void writeFrame(FILE *f, const Frame &fr)
 {
-    if (fr.argc < 0 || fr.argc > MAX_VARS_PER_FRAME || fr.localCount < 0 || fr.localCount > MAX_VARS_PER_FRAME)
-    {
-        return false; /* corrupted frame */
-    }
-    if (!writeString(f, fr.func_name) || !writeInt32(f, fr.argc))
-    {
-        return false;
-    }
+    writeString(f, fr.func_name);
+    fwrite(&fr.argc, sizeof(int32_t), 1, f);
     for (int32_t i = 0; i < fr.argc; i++)
-    {
-        if (!writeVariable(f, fr.argv[i]))
-        {
-            return false;
-        }
-    }
-    if (!writeInt32(f, fr.returnLine) || !writeInt32(f, fr.localCount))
-    {
-        return false;
-    }
+        writeVariable(f, fr.argv[i]);
+    fwrite(&fr.returnLine, sizeof(int32_t), 1, f);
+    fwrite(&fr.localCount, sizeof(int32_t), 1, f);
     for (int32_t i = 0; i < fr.localCount; i++)
-    {
-        if (!writeVariable(f, fr.locals[i]))
-        {
-            return false;
-        }
-    }
-    return true;
+        writeVariable(f, fr.locals[i]);
 }
 
 /* Only the stackDepth real frames are written, top frame first(same order as in memory) */
-static bool writeSnapshot(FILE *f, const Snapshot *s)
+void writeSnapshot(FILE *f, const Snapshot &s)
 {
-    if (s == nullptr || s->stackDepth < 0 || s->stackDepth > MAX_STACK_DEPTH)
-    {
-        return false;
-    }
-    if (!writeInt32(f, s->stackDepth))
-    {
-        return false;
-    }
-    for (int32_t i = 0; i < s->stackDepth; i++)
-    {
-        if (!writeFrame(f, s->callStack[i]))
-        {
-            return false;
-        }
-    }
-    return true;
+    fwrite(&s.stackDepth, sizeof(int32_t), 1, f);
+    for (int32_t i = 0; i < s.stackDepth; i++)
+        writeFrame(f, s.callStack[i]);
 }
 
 // Prints the error, closes the file, frees the index and returns false (used on every error path)
@@ -987,111 +919,65 @@ static bool tdbgFail(FILE *f, int64_t *index, const string &msg)
 bool writeTdbg(Timeline &timeline, const char *tdbgPath)
 {
     FILE *f = fopen(tdbgPath, "wb");
-    if (f == nullptr)
-    {
-        cerr << "Error: cannot create " << tdbgPath << endl;
+    if (!f)
         return false;
-    }
 
-    int32_t stepCount = timeline.getStepCount();
-    int64_t *index = nullptr;
-    if (stepCount > 0)
-    {
-        index = new int64_t[stepCount]; /* index[n] = where snapshot n starts */
-    }
+    TTDBHeader h{};
+    memcpy(h.magic, "TTDB", 4);
+    h.version = 1;
+    h.stepCount = timeline.getStepCount();
+    h.indexOffset = 0;
+    writeHeader(f, h);
 
-    /* placeholder header : reserves the first 20 bytes, filled in properly at the end */
-    TTDBHeader header;
-    header.magic[0] = 'T';
-    header.magic[1] = 'T';
-    header.magic[2] = 'D';
-    header.magic[3] = 'B';
-    header.version = 1;
-    header.stepCount = 0;
-    header.indexOffset = 0;
-    if (!writeHeader(f, header))
-    {
-        return tdbgFail(f, index, "cannot write the header");
-    }
-
-    /* snapshot stream : remember where each snapshot starts, then write it */
-    int32_t i = 0;
+    vector<int64_t> index;
     for (TimelineNode *n = timeline.begin(); n != nullptr; n = n->next)
     {
-        if (i >= stepCount)
-        {
-            return tdbgFail(f, index, "timeline has more snapshots than its step count");
-        }
-        long pos = ftell(f);
-        if (pos < 0)
-        {
-            return tdbgFail(f, index, "cannot read the file position");
-        }
-        index[i] = static_cast<int64_t>(pos);
-        if (!writeSnapshot(f, n->data))
-        {
-            return tdbgFail(f, index, "cannot write snapshot " + to_string(i));
-        }
-        i++;
-    }
-    if (i != stepCount)
-    {
-        return tdbgFail(f, index, "timeline has fewer snapshots than its step count");
+        index.push_back((int64_t)ftell(f));
+        writeSnapshot(f, *n->data);
     }
 
-    /* dense index : the cursor is right after the last snapshot, so this is where it starts */
-    long indexPos = ftell(f);
-    if (indexPos < 0)
-    {
-        return tdbgFail(f, index, "cannot read the file position");
-    }
-    if (stepCount > 0 && fwrite(index, sizeof(int64_t), static_cast<size_t>(stepCount), f) != static_cast<size_t>(stepCount))
-    {
-        return tdbgFail(f, index, "cannot write the index");
-    }
+    h.indexOffset = (int64_t)ftell(f);
+    if (!index.empty())
+        fwrite(index.data(), sizeof(int64_t), index.size(), f);
 
-    /* go back and overwrite the placeholder with the real values */
-    header.stepCount = stepCount;
-    header.indexOffset = static_cast<int64_t>(indexPos);
-    if (fseek(f, 0, SEEK_SET) != 0 || !writeHeader(f, header))
-    {
-        return tdbgFail(f, index, "cannot update the header");
-    }
-
-    delete[] index;
-    fclose(f);
-    return true;
+    fseek(f, 0, SEEK_SET);
+    writeHeader(f, h);
+    return fclose(f) == 0;
 }
-// main section
-int32_t main()
-{
-    if (!validateProgram("source.bin"))
-    {
-        cerr << "The Source file contains some error it did not pass the validation check\n";
-        return 1;
-    }
 
-    int64_t mainOffset = resolveProgram("source.bin", "resolve.bin");
+/*Main Wrapper*/
+bool processSource(string &err)
+{
+    if (!validateProgram("source.bin", err))
+        return false;
+
+    int64_t mainOffset = resolveProgram("source.bin", "resolve.bin", err);
     if (mainOffset < 0)
-    {
-        cerr << "An error occured while writing resolve.bin\n";
-        return 2;
-    }
+        return false;
 
     Timeline timeline;
-    executeProgram("resolve.bin", mainOffset, timeline);
+    bool ok = executeProgram("resolve.bin", mainOffset, timeline, err);
+    if (ok && !writeTdbg(timeline, "session.tdbg"))
+    {
+        err = "server could not write session.tdbg";
+        ok = false;
+    }
 
-    bool written = writeTdbg(timeline, "session.tdbg");
-
-    /* the Timeline does not own its snapshots, so we free them here, after serialization, This is our assumption for this phase */
     for (TimelineNode *n = timeline.begin(); n != nullptr; n = n->next)
-    {
         delete n->data;
-    }
 
-    if (!written)
+    return ok;
+}
+
+// main section
+int main()
+{
+    string err;
+    if (!processSource(err))
     {
-        return 3;
+        cerr << err << endl;
+        return 1;
     }
+    cout << "session.tdbg written\n";
     return 0;
 }
