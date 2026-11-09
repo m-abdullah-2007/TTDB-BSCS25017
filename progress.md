@@ -209,3 +209,25 @@ Decisions / assumptions made:
 Not Much Assumed
 ```
 ---
+### Log 5
+```
+Date: 10 11 2026
+
+Goal of this session:
+Finish helper.h so the server, load balancer and client can share one set of network and checksum code.
+
+What I did:
+- Implemented sendAll and recvAll (loop until all bytes are sent/received).
+- Implemented createListenSocket and connectToHost (shared by server, LB, client).
+- Implemented sendChecksum (4 bytes, lowest byte first).
+- Implemented sendTextMessage and sendFileMessage ([status][body][checksum]).
+
+Problems faced:
+- Unsure how TrailerChecker handles chunks smaller than 4 bytes.Solved: the 4-byte window just keeps filling across chunks.
+- Default host in templates was 127.0.0.1 changed to 127.0.0.0.
+
+Decisions / assumptions made:
+- sendFileMessage never calls shutdown; the caller decides.
+- All helper functions are marked inline to avoid multiple-definition errors.
+```
+---
