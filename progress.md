@@ -6,6 +6,7 @@
 ---
 
 ## Progress Log
+## Phase 01
 
 ### Log 1
 ```
@@ -135,3 +136,42 @@ Decisions / assumptions made:
 Implemented .tdbg version 1 serialization using little-endian values, top-first frame ordering, and a dense index for used slots. Added error handling through writeHeader and writeTdbg, preserved partial timelines after runtime errors, and ensured snapshot cleanup after serialization. Confirmed that source.bin is read from the working directory and errors are reported using cerr.
 ```
 ---
+
+## Phase 02
+### Log 1
+```
+Date: 08 11 2026
+
+Goal of this session:
+Implement Queue and start the understanding and thinking part opf project phase 02
+
+What I did:
+Implemented the queue and decided to use the crc method for checksum and also tried to understand project structure
+
+Problems faced:
+Not much faced
+
+Decisions / assumptions made:
+we can use our choice of checksum method
+
+```
+---
+### Log 2
+```
+Date: 09 11 2026
+
+Goal of this session:
+Updated helper.h with frequently used constants and structs 
+
+What I did:
+Added structs like variable,frame,ttdbHeader etc to helper.h
+
+Problems faced:
+decided to not add snapshot as it has been forward declared at a point in server.cpp
+
+Decisions / assumptions made:
+Not much made
+
+```
+---
+
