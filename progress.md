@@ -192,4 +192,20 @@ Checksum trailer is 4 bytes, little-endian, and covers the status byte too.
 
 ```
 ---
+### Log 4
+```
+Date: 09 11 2026 -> midnight
 
+Goal of this session:
+Implement TrailerChecker
+
+What I did:
+The tail array maintains the last 4 bytes as a potential Adler-32 trailer. As new bytes arrive, older bytes are released as body data and fed into the checksum. At the end, the remaining 4 bytes are treated as the trailer and compared against the computed CRC-32 in little-endian order.
+
+Problems faced:
+Not Much Faced
+
+Decisions / assumptions made:
+Not Much Assumed
+```
+---
