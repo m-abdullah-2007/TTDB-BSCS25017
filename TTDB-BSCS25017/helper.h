@@ -43,3 +43,30 @@ struct TTDBHeader /*placeholder struct for header*/
     int32_t stepCount;
     int64_t indexOffset;
 };
+
+/*checksum computing and checking class*/
+class CRC32
+{
+    uint32_t a, b;
+    static const uint32_t MOD = 65521;
+
+public:
+    CRC32() : a(1), b(0) {}
+    void update(const char *buf, size_t n)
+    {
+        for (size_t i = 0; i < n; i++)
+        {
+            a = (a + (uint8_t)buf[i]) % MOD;
+            b = (b + a) % MOD;
+        }
+    }
+    uint32_t value() const
+    {
+        return (b << 16) | a;
+    }
+    void reset()
+    {
+        a = 1;
+        b = 0;
+    }
+};
