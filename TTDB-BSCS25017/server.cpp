@@ -15,7 +15,7 @@
 #include <sys/socket.h>
 #include <cstdio>
 /*included by me*/
-#include<stdexcept>
+#include <stdexcept>
 #include "helper.h"
 using namespace std;
 
@@ -23,8 +23,8 @@ using namespace std;
 const int32_t MAX_FUNCS = 128;
 const int32_t MAX_TOKENS = MAX_VARS_PER_FRAME + 2; // Caller + func_name + upto 16 params/args
 const int32_t MAX_PATCHES = MAX_FUNCS * 4;
-const uint64_t MAX_SOURCE_BYTES = 15ULL * 1024 * 1024;      // sanity cap on the declared file length
-const int32_t SOCKET_TIMEOUT_SEC = 5;                      // TODO: apply as SO_RCVTIMEO so a deadclient can't hang the server forever
+const uint64_t MAX_SOURCE_BYTES = 15ULL * 1024 * 1024; // sanity cap on the declared file length
+const int32_t SOCKET_TIMEOUT_SEC = 5;                  // TODO: apply as SO_RCVTIMEO so a deadclient can't hang the server forever
 
 // ---- Custom data structures
 
@@ -35,55 +35,57 @@ class Stack
     struct Node
     {
         T data;
-        Node* next;
-        Node(const T& d, Node* ptr) :data(d), next(ptr) {}
+        Node *next;
+        Node(const T &d, Node *ptr) : data(d), next(ptr) {}
     };
-    Node* top;
+    Node *top;
     int32_t count;
 
 public:
     // Implement these functions:
-    Stack() :top(nullptr), count(0) {} // initialize the stack
+    Stack() : top(nullptr), count(0) {} // initialize the stack
 
     ~Stack()
     {
         while (top != nullptr)
         {
-            Node* temp = top;
+            Node *temp = top;
             top = top->next;
             delete temp;
         }
     }
 
     /*my assumption is that call stack is never copied*/
-    Stack(const Stack&) = delete;
-    Stack& operator=(const Stack&) = delete;
+    Stack(const Stack &) = delete;
+    Stack &operator=(const Stack &) = delete;
 
-    void push(const T& val) // pushes the value on the stack if max limit is not reached yet.
+    void push(const T &val) // pushes the value on the stack if max limit is not reached yet.
     {
         if (count >= MAX_STACK_DEPTH)
         {
             throw overflow_error("Stack has reached its Max Limit!");
         }
-        Node* temp = new Node(val, top);
+        Node *temp = new Node(val, top);
         top = temp;
         count++;
     }
     T pop() // pop the top value on the stack
     {
-        if (count <= 0) {
+        if (count <= 0)
+        {
             throw underflow_error("Stack is Empty!");
         }
-        Node* temp = top;
+        Node *temp = top;
         top = top->next;
         T tVal = temp->data;
         delete temp;
         count--;
         return tVal;
     }
-    T& peek() // returns the top value on the stack
+    T &peek() // returns the top value on the stack
     {
-        if (count <= 0) {
+        if (count <= 0)
+        {
             throw underflow_error("Stack is Empty!");
         }
         return top->data;
@@ -101,8 +103,9 @@ public:
     int32_t snapshot_into(T out[], int32_t maxLen)
     {
         int32_t it = 0;
-        Node* temp = top;
-        while (temp != nullptr && it < maxLen) {
+        Node *temp = top;
+        while (temp != nullptr && it < maxLen)
+        {
             out[it++] = temp->data;
             temp = temp->next;
         }
@@ -110,27 +113,29 @@ public:
     }
 };
 
-struct Snapshot; // fwd declaration;
-struct TimelineNode  /*Doubly Linked Node*/
+struct Snapshot;    // fwd declaration;
+struct TimelineNode /*Doubly Linked Node*/
 {
-    Snapshot* data;
-    TimelineNode* next;
-    TimelineNode* prev;
+    Snapshot *data;
+    TimelineNode *next;
+    TimelineNode *prev;
 };
 // Timeline : doubly linked list of Snapshots
 class Timeline
 {
-    TimelineNode* head;
-    TimelineNode* tail;
+    TimelineNode *head;
+    TimelineNode *tail;
     int32_t stepCount;
 
 public:
     // Implement these functions
-    Timeline() :head(nullptr), tail(nullptr), stepCount(0) {}
+    Timeline() : head(nullptr), tail(nullptr), stepCount(0) {}
 
-    ~Timeline() {
-        TimelineNode* temp = nullptr;
-        while (head != nullptr) {
+    ~Timeline()
+    {
+        TimelineNode *temp = nullptr;
+        while (head != nullptr)
+        {
             temp = head;
             head = head->next;
             delete temp;
@@ -138,22 +143,23 @@ public:
     }
 
     /*my assumption is that TimeLine is never copied as we have only one instance of debugger at a time*/
-    Timeline(const Timeline& other) = delete;
-    Timeline& operator=(const Timeline& other) = delete;
+    Timeline(const Timeline &other) = delete;
+    Timeline &operator=(const Timeline &other) = delete;
 
-    void record(Snapshot* s)
+    void record(Snapshot *s)
     {
-        if (head == nullptr) {
-            head = new TimelineNode{ s, nullptr, nullptr };
+        if (head == nullptr)
+        {
+            head = new TimelineNode{s, nullptr, nullptr};
             tail = head;
             stepCount++;
             return;
         }
-        tail->next = new TimelineNode{ s, nullptr, tail };
+        tail->next = new TimelineNode{s, nullptr, tail};
         tail = tail->next;
         stepCount++;
     }
-    TimelineNode* begin()
+    TimelineNode *begin()
     {
         return head;
     }
@@ -164,54 +170,32 @@ public:
 };
 
 // Core structs
-struct Variable
-{
-    string name;
-    int32_t value;
-};
-struct Frame
-{
-    string func_name;
-    int32_t argc; /*number of parameters*/
-    Variable argv[MAX_VARS_PER_FRAME];  /*array of parameters*/
-    int32_t returnLine; /*offset of line from which function is returned*/
-    Variable locals[MAX_VARS_PER_FRAME];  /*array of variables created inside function*/
-    int32_t localCount;  /*count of local variables*/
-};
 struct Snapshot
 {
     Frame callStack[MAX_STACK_DEPTH]; /*additive one instance of a function call i.e one line*/
-    int32_t stackDepth; /*current size of stack*/
+    int32_t stackDepth;               /*current size of stack*/
 };
 
-Snapshot* buildSnapshot(Stack<Frame>& callStack)
+Snapshot *buildSnapshot(Stack<Frame> &callStack)
 {
-    Snapshot* snap = new Snapshot(); /*heap: a Snapshot is far too big for  stack DS and will also be  returned after this function ends*/
+    Snapshot *snap = new Snapshot(); /*heap: a Snapshot is far too big for  stack DS and will also be  returned after this function ends*/
     snap->stackDepth = callStack.snapshot_into(snap->callStack, MAX_STACK_DEPTH);
     return snap;
 }
 
-struct TTDBHeader /*placeholder struct for header*/
-{
-    char magic[4]; // "TTDB"
-    int32_t version;
-    int32_t stepCount;
-    int64_t indexOffset;
-};
-
 /* Header = magic(4) + version(4) + stepCount(4) + indexOffset(8) = 20 bytes. */
 /* Each field is written on its own, never the whole struct, so no padding bytes reach the file. */
-bool writeHeader(FILE* f, const TTDBHeader& h)
+bool writeHeader(FILE *f, const TTDBHeader &h)
 {
     if (f == nullptr)
     {
         return false;
     }
-    if (fwrite(h.magic, sizeof(char), 4, f) != 4)  /*writes magic string*/
+    if (fwrite(h.magic, sizeof(char), 4, f) != 4) /*writes magic string*/
     {
         return false;
     }
-    if (fwrite(&h.version, sizeof(int32_t), 1, f) != 1)  /*writes version*/
+    if (fwrite(&h.version, sizeof(int32_t), 1, f) != 1) /*writes version*/
     {
         return false;
     }
@@ -227,32 +211,35 @@ bool writeHeader(FILE* f, const TTDBHeader& h)
 }
 
 /*Self Made Helpers for 0x0*/
-static bool isSpaceChar(char c)  /*detects white space characters*/
+static bool isSpaceChar(char c) /*detects white space characters*/
 {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
-static string nextWord(const string& line, size_t& i)  /*return the next word in a string after the index passed " i " */
+static string nextWord(const string &line, size_t &i) /*return the next word in a string after the index passed " i " */
 {
     /*skips all whitespace*/
-    while (i < line.size() && isSpaceChar(line[i])) {
+    while (i < line.size() && isSpaceChar(line[i]))
+    {
         i++;
     }
     size_t start = i;
     /*goes till the next whitespace char*/
-    while (i < line.size() && !isSpaceChar(line[i])) {
+    while (i < line.size() && !isSpaceChar(line[i]))
+    {
         i++;
     }
     return line.substr(start, i - start);
 }
 
 // PASS 0x0: READING source.bin + VALIDITY CHECK
-bool readSourceLine(ifstream& in, string& out) // reads the next non blank line
+bool readSourceLine(ifstream &in, string &out) // reads the next non blank line
 {
     string line;
     bool isNotBlank = false;
 
     /*Skips the blank lines*/
-    while (!isNotBlank && getline(in, line)) {
+    while (!isNotBlank && getline(in, line))
+    {
         if (line.find_first_not_of(" \t\r\n") != string::npos)
         {
             isNotBlank = true;
@@ -261,7 +248,7 @@ bool readSourceLine(ifstream& in, string& out) // reads the next non blank line
     /* reached the end of the file without finding a usable line */
     if (!isNotBlank)
     {
-        return false; 
+        return false;
     }
     /*trim the line found*/
     size_t end = line.find_last_not_of(" \t\r\n");
@@ -270,13 +257,13 @@ bool readSourceLine(ifstream& in, string& out) // reads the next non blank line
     return true;
 }
 
-string firstWord(const string& line) //returns first word from the input string
+string firstWord(const string &line) // returns first word from the input string
 {
     /*we use it to check if first word is func for function definition or if it is call for func call*/
     size_t i = 0;
     return nextWord(line, i);
 }
-string secondWord(const string& line) // returns the second word
+string secondWord(const string &line) // returns the second word
 {
     /*we use it to check second word like func name in definition or what function is called in func call*/
     size_t i = 0;
@@ -284,16 +271,17 @@ string secondWord(const string& line) // returns the second word
     return nextWord(line, i);
 }
 
-bool validateProgram(const char* sourcePath) // for each func defined there should be exactly one func_end and no nested funcs allowed - 
+bool validateProgram(const char *sourcePath) // for each func defined there should be exactly one func_end and no nested funcs allowed -
 {
     ifstream Rdr(sourcePath);
-    if (!Rdr) {
+    if (!Rdr)
+    {
         cerr << "Error: Cannot Open File " << sourcePath << endl; /*stream error*/
         return false;
     }
-    bool funcOpen = false;   /*true while a func is open(depth is only 0 or 1 at any time)*/
-    int32_t funcLineNo = 0;  /*line number of the currently open func*/
-    int32_t lineNo = 0;      /*counts non - blank lines only*/
+    bool funcOpen = false;  /*true while a func is open(depth is only 0 or 1 at any time)*/
+    int32_t funcLineNo = 0; /*line number of the currently open func*/
+    int32_t lineNo = 0;     /*counts non - blank lines only*/
     string currLine;
 
     while (readSourceLine(Rdr, currLine)) /*blank lines are skipped in this function*/
@@ -332,32 +320,37 @@ bool validateProgram(const char* sourcePath) // for each func defined there shou
 // PASS 0x1: RESOLVE() -> resolve.bin
 // writes one [offset(8B)][size(4B)][string] record at the current file position
 // returns this record's own starting byte position
-int64_t writeResolveRecord(FILE* f, int64_t offsetField, const string& text) /*writes resolve.bin*/
+int64_t writeResolveRecord(FILE *f, int64_t offsetField, const string &text) /*writes resolve.bin*/
 {
     /*Pointer pass check*/
-    if (f == nullptr) {
+    if (f == nullptr)
+    {
         return -1;
     }
     /* Write byte offset of 8 bytes (int64_t)*/
     int64_t start = static_cast<int64_t>(ftell(f)); /*ftell() returns long*/
-    if (fwrite(&offsetField, sizeof(int64_t), 1, f) != 1) {
+    if (fwrite(&offsetField, sizeof(int64_t), 1, f) != 1)
+    {
         return -1;
     }
     /*Write text.size() of 4 byte (int32_t)*/
     int32_t len = static_cast<int32_t>(text.size());
-    if (fwrite(&len, sizeof(int32_t), 1, f) != 1) {
+    if (fwrite(&len, sizeof(int32_t), 1, f) != 1)
+    {
         return -1;
     }
     /*Check to enforce if the string is not written properly*/
     /*empty string check is made while reading code from source.bin*/
-    if (fwrite(text.data(), sizeof(char), text.size(), f) != text.size()) {
+    if (fwrite(text.data(), sizeof(char), text.size(), f) != text.size())
+    {
         return -1;
     }
     return start;
 }
-int64_t readResolveRecord(FILE* f, string& outText) // reads one record at the current position and advances past it, returns the offset field - the raw line text comes back untouched in outText.
+int64_t readResolveRecord(FILE *f, string &outText) // reads one record at the current position and advances past it, returns the offset field - the raw line text comes back untouched in outText.
 {
-    if (f == nullptr) {
+    if (f == nullptr)
+    {
         return -1;
     }
     int64_t offsetRead{};
@@ -393,11 +386,10 @@ int64_t readResolveRecord(FILE* f, string& outText) // reads one record at the c
 // Once the whole file is written, every CALL's offset field is patched
 // with its target's position. Patching happens after the full write
 // Returns the byte offset of main's FUNC header record.
-// if there is no main return the error 
-
+// if there is no main return the error
 
 /*Returns the index of function name in funcArray, or -1 if it is not found*/
-static int32_t funcFind(const FuncEntry funcArr[], int32_t funcCt, const string& funcN)
+static int32_t funcFind(const FuncEntry funcArr[], int32_t funcCt, const string &funcN)
 {
     for (int32_t i = 0; i < funcCt; i++)
     {
@@ -409,7 +401,7 @@ static int32_t funcFind(const FuncEntry funcArr[], int32_t funcCt, const string&
     return -1;
 }
 
-static int64_t throwResolveError(FILE* f, const string& msg)
+static int64_t throwResolveError(FILE *f, const string &msg)
 {
     cerr << "Error: " << msg << endl;
     if (f != nullptr)
@@ -419,23 +411,24 @@ static int64_t throwResolveError(FILE* f, const string& msg)
     return -1;
 }
 
-
-int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
+int64_t resolveProgram(const char *sourcePath, const char *resolveBinPath)
 {
     /*the stack was getting too big of the function so heap was used*/
-    FuncEntry* funcArray = new FuncEntry[MAX_FUNCS];
+    FuncEntry *funcArray = new FuncEntry[MAX_FUNCS];
     int32_t funcCount = 0;
-    PendingPatch* patches = new PendingPatch[MAX_PATCHES];
+    PendingPatch *patches = new PendingPatch[MAX_PATCHES];
     int32_t patchCount = 0;
 
     ifstream Rdr(sourcePath); /*opens source.bin in txt mode*/
-    if (!Rdr) {
+    if (!Rdr)
+    {
         cerr << "Cannot open Source file: " << sourcePath << endl;
         return -1;
     }
     /*opens resolve.bin in binary mode*/
-    FILE* f = fopen(resolveBinPath, "wb+"); /*need + so we can seek back and patch as it open files for reading too*/
-    if (f == nullptr) {
+    FILE *f = fopen(resolveBinPath, "wb+"); /*need + so we can seek back and patch as it open files for reading too*/
+    if (f == nullptr)
+    {
         cerr << "Cannot open or create resolve file: " << resolveBinPath << endl;
         return -1;
     }
@@ -443,7 +436,7 @@ int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
     int64_t offset{};
     int32_t lineNo = 0; /* counts non - blank lines */
     string line;
-    while (readSourceLine(Rdr, line))  /*used to write resolve.record*/
+    while (readSourceLine(Rdr, line)) /*used to write resolve.record*/
     {
         lineNo++;
         string word = firstWord(line);
@@ -500,10 +493,10 @@ int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
         {
             return throwResolveError(f, "call to undefined function '" + patches[i].targetFuncName + "'");
         }
-        if (fseek(f, static_cast<long>(patches[i].byteOffsetOfOffsetField), SEEK_SET) != 0) /*SEEK_SET is the origin of file*/  /*return 0 from fseek() means that the seek succeeded*/
+        if (fseek(f, static_cast<long>(patches[i].byteOffsetOfOffsetField), SEEK_SET) != 0) /*SEEK_SET is the origin of file*/ /*return 0 from fseek() means that the seek succeeded*/
         {
             return throwResolveError(f, "seek failed while patching calls");
-        } 
+        }
         int64_t target = funcArray[idx].byteOffsetInResolveBin;
         if (fwrite(&target, sizeof(int64_t), 1, f) != 1)
         {
@@ -525,9 +518,9 @@ int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
 // PASS 0x2: EXECUTION (tokenization happens here)
 enum TokenType
 {
-    KEYWORD,  /*e.g: func,set*/
+    KEYWORD,    /*e.g: func,set*/
     IDENTIFIER, /*e.g: add,mul,sub*/
-    PARAM  /*e.g a,b,c*/
+    PARAM       /*e.g a,b,c*/
 };
 struct Token
 {
@@ -539,7 +532,7 @@ struct Token
 // instruction set = [func, func_end, call, set, add, sub, mul and div]
 // next word is identifier like name of a function, variable name
 // after identifier all are the params/arg, space separated
-int32_t tokenizeLine(const string& line, Token* tokens, int32_t maxTokens)
+int32_t tokenizeLine(const string &line, Token *tokens, int32_t maxTokens)
 {
     size_t i = 0;
     int32_t count = 0; /*count of tokens in the line*/
@@ -574,7 +567,7 @@ int32_t tokenizeLine(const string& line, Token* tokens, int32_t maxTokens)
 
 /*Self Made 0x2 helpers*/
 /*true if text is an integer like 10 or -5; the value goes into out*/
-static bool parseNumber(const string& text, int32_t& out)
+static bool parseNumber(const string &text, int32_t &out)
 {
     if (text.empty())
     {
@@ -617,7 +610,7 @@ static bool parseNumber(const string& text, int32_t& out)
 }
 
 /* finds a variable by name : parameters first, then locals then nullptr if missing */
-static Variable* findVar(Frame& fr, const string& varName)
+static Variable *findVar(Frame &fr, const string &varName)
 {
     for (int32_t i = 0; i < fr.argc; i++)
     {
@@ -637,13 +630,13 @@ static Variable* findVar(Frame& fr, const string& varName)
 }
 
 /* text is either a number or a variable name; false if it is neither */
-static bool getValue(Frame& fr, const string& text, int32_t& out)
+static bool getValue(Frame &fr, const string &text, int32_t &out)
 {
     if (parseNumber(text, out))
     {
         return true;
     }
-    Variable* v = findVar(fr, text);
+    Variable *v = findVar(fr, text);
     if (v == nullptr)
     {
         return false;
@@ -652,17 +645,17 @@ static bool getValue(Frame& fr, const string& text, int32_t& out)
     return true;
 }
 
-static bool throwRunTImeError(const string& msg, const string& instruction)
+static bool throwRunTImeError(const string &msg, const string &instruction)
 {
     cerr << "Runtime error: " << msg << " (Instruction: " << instruction << ")" << endl;
     return false;
 }
 
 /* Runs the program.Returns false on a runtime error(the timeline recorded so far stays valid). */
-static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline) /*Time Line is passed by reference so snapshots recorded here stay visible and we also delete timeline's copy constructor and assignment operator*/
-{   /*main offset returned by resolveProgram*/
+static bool runProgram(FILE *f, int64_t mainOffset, Timeline &timeline) /*Time Line is passed by reference so snapshots recorded here stay visible and we also delete timeline's copy constructor and assignment operator*/
+{                                                                       /*main offset returned by resolveProgram*/
     Stack<Frame> callStack;
-    Token* tokens = new Token[MAX_TOKENS];
+    Token *tokens = new Token[MAX_TOKENS];
     string text; /*raw line entry*/
 
     /* main's header: must be exactly "func main" */
@@ -702,7 +695,7 @@ static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline) /*Time L
         {
             return throwRunTImeError("empty or too long instruction", text);
         }
-        const string& identi = tokens[0].text;
+        const string &identi = tokens[0].text;
 
         if (identi == "set")
         {
@@ -710,13 +703,13 @@ static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline) /*Time L
             {
                 return throwRunTImeError("set needs a variable and a value", text);
             }
-            Frame& cur = callStack.peek();
+            Frame &cur = callStack.peek();
             int32_t val = 0;
             if (!getValue(cur, tokens[2].text, val))
             {
                 return throwRunTImeError("undefined variable '" + tokens[2].text + "'", text);
             }
-            Variable* v = findVar(cur, tokens[1].text);
+            Variable *v = findVar(cur, tokens[1].text);
             if (v != nullptr)
             {
                 v->value = val;
@@ -744,8 +737,8 @@ static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline) /*Time L
             {
                 return throwRunTImeError(identi + " needs a variable and a value", text);
             }
-            Frame& cur = callStack.peek();
-            Variable* dst = findVar(cur, tokens[1].text);
+            Frame &cur = callStack.peek();
+            Variable *dst = findVar(cur, tokens[1].text);
             if (dst == nullptr)
             {
                 return throwRunTImeError("undefined variable '" + tokens[1].text + "'", text);
@@ -791,7 +784,7 @@ static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline) /*Time L
             {
                 return throwRunTImeError("call needs a function name", text);
             }
-            Frame& cur = callStack.peek();
+            Frame &cur = callStack.peek();
             int32_t argc = n - 2;
             int32_t argVals[MAX_VARS_PER_FRAME];
             for (int32_t i = 0; i < argc; i++) /*check if all variables are defined*/
@@ -858,10 +851,10 @@ static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline) /*Time L
             }
             Token ct[MAX_TOKENS];
             int32_t cn = tokenizeLine(callText, ct, MAX_TOKENS);
-            Frame& caller = callStack.peek();
+            Frame &caller = callStack.peek();
             for (int32_t i = 0; i < callee.argc && 2 + i < cn; i++)
             {
-                Variable* v = findVar(caller, ct[2 + i].text);
+                Variable *v = findVar(caller, ct[2 + i].text);
                 if (v != nullptr) // literal arguments are skipped
                 {
                     v->value = callee.argv[i].value; // copy out
@@ -876,9 +869,9 @@ static bool runProgram(FILE* f, int64_t mainOffset, Timeline& timeline) /*Time L
     }
 }
 
-void executeProgram(const char* resolveBinPath, int64_t mainOffset, Timeline& timeline)
+void executeProgram(const char *resolveBinPath, int64_t mainOffset, Timeline &timeline)
 {
-    FILE* f = fopen(resolveBinPath, "rb");
+    FILE *f = fopen(resolveBinPath, "rb");
     if (f == nullptr)
     {
         cerr << "Error: cannot open " << resolveBinPath << endl;
@@ -888,7 +881,7 @@ void executeProgram(const char* resolveBinPath, int64_t mainOffset, Timeline& ti
     {
         runProgram(f, mainOffset, timeline);
     }
-    catch (const exception& e) // e.g. the stack's overflow_error on runaway recursion
+    catch (const exception &e) // e.g. the stack's overflow_error on runaway recursion
     {
         cerr << "Runtime error: " << e.what() << endl;
     }
@@ -896,13 +889,13 @@ void executeProgram(const char* resolveBinPath, int64_t mainOffset, Timeline& ti
 }
 
 // PASS 0x3: SERIALIZE TIMELINE
-static bool writeInt32(FILE* f, int32_t v)
+static bool writeInt32(FILE *f, int32_t v)
 {
     return fwrite(&v, sizeof(int32_t), 1, f) == 1;
 }
 
 // length (4 bytes) followed by the characters, no '\0' (same idea as a resolve record)
-static bool writeString(FILE* f, const string& s)
+static bool writeString(FILE *f, const string &s)
 {
     int32_t len = static_cast<int32_t>(s.size());
     if (!writeInt32(f, len))
@@ -916,13 +909,13 @@ static bool writeString(FILE* f, const string& s)
     return true;
 }
 
-static bool writeVariable(FILE* f, const Variable& v)
+static bool writeVariable(FILE *f, const Variable &v)
 {
     return writeString(f, v.name) && writeInt32(f, v.value);
 }
 
 /* Only the used slots are written : argc parameters and localCount locals */
-static bool writeFrame(FILE* f, const Frame& fr)
+static bool writeFrame(FILE *f, const Frame &fr)
 {
     if (fr.argc < 0 || fr.argc > MAX_VARS_PER_FRAME || fr.localCount < 0 || fr.localCount > MAX_VARS_PER_FRAME)
     {
@@ -954,7 +947,7 @@ static bool writeFrame(FILE* f, const Frame& fr)
 }
 
 /* Only the stackDepth real frames are written, top frame first(same order as in memory) */
-static bool writeSnapshot(FILE* f, const Snapshot* s)
+static bool writeSnapshot(FILE *f, const Snapshot *s)
 {
     if (s == nullptr || s->stackDepth < 0 || s->stackDepth > MAX_STACK_DEPTH)
     {
@@ -975,7 +968,7 @@ static bool writeSnapshot(FILE* f, const Snapshot* s)
 }
 
 // Prints the error, closes the file, frees the index and returns false (used on every error path)
-static bool tdbgFail(FILE* f, int64_t* index, const string& msg)
+static bool tdbgFail(FILE *f, int64_t *index, const string &msg)
 {
     cerr << "Error: " << msg << endl;
     if (f != nullptr)
@@ -991,9 +984,9 @@ static bool tdbgFail(FILE* f, int64_t* index, const string& msg)
 // placing each snapshot in the file while maintaining the index(starting point of each nth snapshot)
 // after timeline add the index array i the file
 // update the header
-bool writeTdbg(Timeline& timeline, const char* tdbgPath)
+bool writeTdbg(Timeline &timeline, const char *tdbgPath)
 {
-    FILE* f = fopen(tdbgPath, "wb");
+    FILE *f = fopen(tdbgPath, "wb");
     if (f == nullptr)
     {
         cerr << "Error: cannot create " << tdbgPath << endl;
@@ -1001,7 +994,7 @@ bool writeTdbg(Timeline& timeline, const char* tdbgPath)
     }
 
     int32_t stepCount = timeline.getStepCount();
-    int64_t* index = nullptr;
+    int64_t *index = nullptr;
     if (stepCount > 0)
     {
         index = new int64_t[stepCount]; /* index[n] = where snapshot n starts */
@@ -1023,7 +1016,7 @@ bool writeTdbg(Timeline& timeline, const char* tdbgPath)
 
     /* snapshot stream : remember where each snapshot starts, then write it */
     int32_t i = 0;
-    for (TimelineNode* n = timeline.begin(); n != nullptr; n = n->next)
+    for (TimelineNode *n = timeline.begin(); n != nullptr; n = n->next)
     {
         if (i >= stepCount)
         {
@@ -1091,7 +1084,7 @@ int32_t main()
     bool written = writeTdbg(timeline, "session.tdbg");
 
     /* the Timeline does not own its snapshots, so we free them here, after serialization, This is our assumption for this phase */
-    for (TimelineNode* n = timeline.begin(); n != nullptr; n = n->next)
+    for (TimelineNode *n = timeline.begin(); n != nullptr; n = n->next)
     {
         delete n->data;
     }

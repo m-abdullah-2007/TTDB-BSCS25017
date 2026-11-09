@@ -219,29 +219,34 @@ inline int connectToHost(const char *host, int port)
 
 /* Message senders */
 /* Message format on every hop: [status: 1 byte][body][checksum: 4 bytes, little-endian] */
-
 inline bool sendChecksum(int sock, const Adelier32 &c)
 {
     uint32_t v = c.value();
     char bytes[Adelier_Size];
     for (int i = 0; i < Adelier_Size; i++)
-        bytes[i] = (char)((v >> (8 * i)) & 0xFF);
+        bytes[i] = (char)((v >> (8 * i)) & 0xFF); /*Splits CheckSum into four bytes*/
     return sendAll(sock, bytes, Adelier_Size);
 }
-
+/*send a short written message with proof attached used for error messages*/
 inline bool sendTextMessage(int sock, uint8_t status, const string &text)
 {
     Adelier32 c;
     char st = (char)status;
     c.update(&st, 1);
     c.update(text.data(), text.size());
+    /*Sends the status byte. Stop if it fails.*/
     if (!sendAll(sock, &st, 1))
+    {
         return false;
+    }
+    /*Sends the text itself*/
     if (!text.empty() && !sendAll(sock, text.data(), text.size()))
+    {
         return false;
+    }
     return sendChecksum(sock, c);
 }
-
+/*send a whole file, piece by piece, with proof attached used to send the source.bin (client) and the .tdbg file (server)*/
 inline bool sendFileMessage(int sock, uint8_t status, const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -251,14 +256,15 @@ inline bool sendFileMessage(int sock, uint8_t status, const char *path)
     Adelier32 c;
     char st = (char)status;
     c.update(&st, 1);
+    /*Sends the status byte. Stop if it fails.*/
     if (!sendAll(sock, &st, 1))
     {
         fclose(f);
         return false;
     }
-
     vector<char> buf(IO_BUFFER_SIZE);
     size_t got;
+    /*Sends the file itself*/
     while ((got = fread(buf.data(), 1, buf.size(), f)) > 0)
     {
         c.update(buf.data(), got);
