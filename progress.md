@@ -231,3 +231,32 @@ Decisions / assumptions made:
 - All helper functions are marked inline to avoid multiple-definition errors.
 ```
 ---
+### Log 6
+```
+Date: 10 11 2026  (Early Morning)
+
+Goal of this session:
+Build the server's network layer so it can receive a source file over a socket,run the Phase 1 passes, and reply with a .tdbg file or an error message.
+
+What I did:
+- Changed validateProgram and resolveProgram to report the reason for failure  through a string &err (instead of printing to cerr).
+- Replaced new[] arrays in resolveProgram with vectors to fix memory leaks.
+- Changed executeProgram and writeTdbg to return bool, with errors stored in err.
+- Wrote processSource(): runs validate -> resolve -> execute -> writeTdbg and  frees every Snapshot afterwards (Timeline does not own them).
+- Implemented receiveUpload(): reads [status][body][checksum] through  TrailerChecker, skips the status byte, writes only the body to source.bin, rejects files over MAX_SOURCE_BYTES, and verifies the checksum.
+- Applied the SO_RCVTIMEO timeout (SOCKET_TIMEOUT_SEC) so a silent client cannot hang the server.
+- Implemented serveClient() and a new main(argc, argv) that takes the port, listens, and serves one client at a time.
+- Tested: valid program, program with no main, and a corrupted upload using a temprarily written test_client.cpp.
+
+Problems faced:
+- Server kept exiting immediately and tests said "cannot connect".
+- Project folder is nested (TTDB-BSCS25017/TTDB-BSCS25017), so the testing  files were in a different folder from the executables.Solved: used relative paths .
+
+Decisions / assumptions made:
+- A runtime error sends an error message to the client instead of a partial .tdbg file, which keeps the client logic simple.
+- Server handles one client at a time, since the load balancer only sends one.
+- Snapshot layout on disk is field by field: strings as length + characters, and only the used argv/locals entries are written. The client readers must match this exactly.
+- Stack overflow (max depth 64) is caught and reported as an error.
+
+```
+---

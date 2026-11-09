@@ -33,13 +33,6 @@ const int MAX_JUMP = 1000000000;          // biggest n accepted by jmp
 string LB_HOST = "127.0.0.1";
 int LB_PORT = 5000;
 
-// ---- Structs (same as Phase 1, so the file can be read back exactly as it was written) ----
-struct Snapshot
-{
-    Frame callStack[MAX_STACK_DEPTH];
-    int32_t stackDepth;
-};
-
 // ---- Structs only the client needs ----
 struct TdbgReader
 {

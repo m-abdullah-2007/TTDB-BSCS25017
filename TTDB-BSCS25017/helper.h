@@ -39,6 +39,12 @@ struct Variable
     int32_t value;
 };
 
+struct Snapshot
+{
+    Frame callStack[MAX_STACK_DEPTH]; /*additive one instance of a function call i.e one line*/
+    int32_t stackDepth;               /*current size of stack*/
+};
+
 struct Frame
 {
     string func_name;
