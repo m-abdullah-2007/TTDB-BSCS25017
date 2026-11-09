@@ -174,4 +174,22 @@ Not much made
 
 ```
 ---
+### Log 3
+```
+Date: 09 11 2026
+
+Goal of this session:
+choose a checksum method.
+
+What I did:
+Chose Adler-32 as the checksum (incremental, 4-byte result)
+
+Problems faced:
+Not Much Faced
+
+Decisions / assumptions made:
+Checksum trailer is 4 bytes, little-endian, and covers the status byte too.
+
+```
+---
 
