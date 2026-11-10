@@ -39,12 +39,6 @@ struct Variable
     int32_t value;
 };
 
-struct Snapshot
-{
-    Frame callStack[MAX_STACK_DEPTH]; /*additive one instance of a function call i.e one line*/
-    int32_t stackDepth;               /*current size of stack*/
-};
-
 struct Frame
 {
     string func_name;
@@ -53,6 +47,12 @@ struct Frame
     int32_t returnLine;                  /*offset of line from which function is returned*/
     Variable locals[MAX_VARS_PER_FRAME]; /*array of variables created inside function*/
     int32_t localCount;                  /*count of local variables*/
+};
+
+struct Snapshot
+{
+    Frame callStack[MAX_STACK_DEPTH]; /*additive one instance of a function call i.e one line*/
+    int32_t stackDepth;               /*current size of stack*/
 };
 
 struct TTDBHeader /*placeholder struct for header*/

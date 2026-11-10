@@ -39,7 +39,8 @@ const int LISTEN_BACKLOG = 16;            // connections the OS holds until acce
 const int MAX_PENDING_CLIENTS = 8;        // clients allowed to wait in our queue. More than this get "server busy".
 const int STARTUP_MAX_ATTEMPTS = 50;      // after starting the server, how many times we try to connect
 const int STARTUP_POLL_INTERVAL_MS = 100; // wait between those tries (50 x 100 ms = 5 seconds in total)
-const int RELAY_RECV_TIMEOUT_SEC = 30;    // a silent peer cannot hang the dispatcher
+const int CLIENT_RECV_TIMEOUT_SEC = 5;    // silent client can't hog the dispatcher
+const int SERVER_RECV_TIMEOUT_SEC = 30;   // server may legitimately take longer
 const int CLIENT_WAIT_TIMEOUT_SEC = 30;   // clients waiting longer are dropped silently
 int lbPort = 5000;
 string serverHost = "127.0.0.1";
@@ -215,7 +216,7 @@ void relayOneClient(ClientInfo &c)
     // 5. Server -> client: repeat recv() from serverSock and sendAll() to clientSock.
     //    Stop when recv() returns 0 (the server sent its whole reply and closed) or fails.
     // 6. Close both sockets.
-    setRecvTimeout(c.sock, RELAY_RECV_TIMEOUT_SEC);
+    setRecvTimeout(c.sock, CLIENT_RECV_TIMEOUT_SEC);
 
     int serverSock = connectToServerWithWakeup();
     if (serverSock < 0)
@@ -223,14 +224,18 @@ void relayOneClient(ClientInfo &c)
         sendError(c.sock, "backend server failed to start");
         return;
     }
-    setRecvTimeout(serverSock, RELAY_RECV_TIMEOUT_SEC);
+    setRecvTimeout(serverSock, SERVER_RECV_TIMEOUT_SEC);
 
     // client -> server
-    if (!relayVerified(c.sock, serverSock))
+    errno = 0;
+    bool ok = relayVerified(c.sock, serverSock);
+    int relayErr = errno; // capture before shutdown/close can change it
+
+    if (!ok)
     {
         shutdown(serverSock, SHUT_WR); // trailer was withheld; server will reject it too
         close(serverSock);
-        sendError(c.sock, "upload checksum mismatch");
+        sendError(c.sock, (relayErr == EAGAIN || relayErr == EWOULDBLOCK) ? "upload timed out" : "upload checksum mismatch");
         return;
     }
     shutdown(serverSock, SHUT_WR); // tells the server the upload is complete
