@@ -260,3 +260,36 @@ Decisions / assumptions made:
 
 ```
 ---
+### Log 7
+```
+Date: 10 11 2026 (Evening)
+
+Goal of this session:
+Build the load balancer so clients can connect to it, wait in a queue, and be served one at a time, with the Load Balancer starting the server automatically if it is down.
+
+What I did:
+- load_balancer.cpp with a full implementation that uses the shared helpers from helper.h 
+- Implemented startServer() using system("./server <port> &") and connectToServerWithWakeup() (try once, start the server, then retry up to  50 times at 100 ms intervals).
+- Implemented relayVerified(): copies one message from one socket to another, checks the checksum on the way, and sends the trailer only if the check passed.
+- Implemented relayOneClient(): connect to server (with wakeup), relay the upload, half-close the server socket, relay the reply back.
+- Implemented acceptLoop() (detached thread): accepts clients, locks the queue mutex, enqueues up to 8, and replies "server busy, try again later" to the  rest.
+- Implemented dispatcherLoop() (main thread): dequeues one client at a time, drops clients that waited more than 30 seconds, and closes the client socket in one place only.
+- Added SIGINT handling with sigaction so Ctrl+C sets the flag and the loops exit cleanly for proper terminal handling.
+- Added receive timeouts so a silent client or server cannot hang the dispatcher.
+
+Problems faced:
+- Template defaults used 127.0.0.0, which is not the loopback address.
+  Solved: changed to 127.0.0.1.
+- Template functions sendAll, createListenSocket and connectToServer clashed
+  with the versions in helper.h (redefinition).
+  Solved: removed the LB copies and call the shared ones.
+- startServer runs ./server relative to the current folder.
+  Solved: run the LB from the folder that contains the server executable better for only executable use.
+
+Decisions / assumptions made:
+- Reply messages on every hop use [status][body][checksum]; the LB verifies each direction and withholds the trailer on failure so the next receiver rejects the message.
+- Only the dispatcher closes a queued client's socket; acceptLoop closes only the clients it refuses.
+- Queue is not thread-safe by itself; every size/enqueue/dequeue check is done inside queueMutex.
+- The dispatcher sleeps 20 ms when the queue is empty to avoid busy-spinning.
+```
+---
