@@ -322,3 +322,28 @@ Decisions / assumptions made:
 - TdbgReader holds a FILE* instead of ssize_t file_index.
 ```
 ---
+### Log 9
+```
+Date: 10 11 2026  (Midnight before submission)
+
+Goal of this session:
+Run the full test suite on client -> load balancer -> server, and fix the one weakness it exposed: a silent(idle) client could hold the single dispatcher thread for up to 30 s.
+
+What I did:
+- Diagnosed it: the dispatcher blocks in recv() on the silent client until RELAY_RECV_TIMEOUT_SEC (30 s) expires, but the test kills the real client after 20 s.
+- Short-term: raised the test timeout to 45 s, which passed but did not fix the weakness.
+- Real fix in load_balancer.cpp: replaced RELAY_RECV_TIMEOUT_SEC with CLIENT_RECV_TIMEOUT_SEC = 5 and SERVER_RECV_TIMEOUT_SEC = 30, and applied them in relayOneClient on the client socket and the server socket.
+- Capture errno right after relayVerified() fails, so a timeout replies "upload timed out" instead of "upload checksum mismatch".
+- Set test 12 back to timeout 20, so it now proves the fix. Final result: 48 passed, 0 failed.
+- Reviewed client.cpp and server.cpp for timeout conflicts: client waits up to 40 s for the reply, server has a 5 s SO_RCVTIMEO on the upload.
+
+Problems faced:
+- Idle client blocked the dispatcher for 30 s, longer than the test's 20 s window. Solved: 5 s receive timeout on the client side of the LB.
+- shutdown() and close() can overwrite errno before it is checked. Solved: save errno in a local variable immediately after relayVerified().
+
+Decisions / assumptions made:
+- The timeout applies per recv() call, not to the whole upload, so a client actively sending a large file is never cut off.
+- The server-side timeout stays at 30 s because processing can legitimately take longer than an idle upload.
+- Queue-wait limit (30 s, arrivedAt check) and the non-blocking drain for "server busy" were already correct and unchanged.
+- Known limit: a client sending one byte every few seconds could still occupy the dispatcher. A total upload deadline would fix it but is beyond the spec.
+---
