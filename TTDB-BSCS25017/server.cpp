@@ -115,7 +115,6 @@ public:
     }
 };
 
-struct Snapshot;    // fwd declaration;
 struct TimelineNode /*Doubly Linked Node*/
 {
     Snapshot *data;
@@ -172,11 +171,6 @@ public:
 };
 
 // Core structs
-struct Snapshot
-{
-    Frame callStack[MAX_STACK_DEPTH]; /*additive one instance of a function call i.e one line*/
-    int32_t stackDepth;               /*current size of stack*/
-};
 
 Snapshot *buildSnapshot(Stack<Frame> &callStack)
 {
@@ -969,10 +963,10 @@ bool processSource(string &err)
 
     return ok;
 }
-/**/
+/*receive the letter and write it to disk*/
 bool receiveUpload(int clientSock, const char *path, string &err)
 {
-    // a client that goes silent will make recv() fail instead of blocking forever
+    /* a client that goes silent will make recv() fail instead of blocking forever */
     timeval tv{};
     tv.tv_sec = SOCKET_TIMEOUT_SEC;
     setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
@@ -996,17 +990,17 @@ bool receiveUpload(int clientSock, const char *path, string &err)
         size_t start = 0;
         if (!gotStatus && m > 0)
         {
-            gotStatus = true; // the first released byte is the status byte, skip it
+            gotStatus = true; /* the first released byte is the status byte, skip it */
             start = 1;
         }
         bodyBytes += (m - start);
-        if (bodyBytes > MAX_SOURCE_BYTES)
+        if (bodyBytes > MAX_SOURCE_BYTES) /*Size Check*/
         {
             fclose(f);
             err = "source file too large";
             return false;
         }
-        if (m > start)
+        if (m > start) /*if succesful*/
             fwrite(out.data() + start, 1, m - start, f);
     }
     fclose(f);
