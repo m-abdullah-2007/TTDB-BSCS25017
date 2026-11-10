@@ -1,9 +1,0 @@
-func add a b
-add a b
-func_end
-func main
-set x 5
-set y 7
-call add x y
-set z x
-func_end
