@@ -23,6 +23,7 @@
 #include <vector>
 #include <sys/socket.h>
 #include "helper.h"
+#include <sstream>
 using namespace std;
 
 // ---- Constants ----
@@ -434,6 +435,23 @@ bool cmdJmpPrv(DebugSession &s, int32_t n) { return moveBy(s, -(int64_t)n); }
 // PART F: THE INFINITE LOOP
 // =============================================================================================
 
+static bool parsePositive(const string &t, int32_t &out)
+{
+    if (t.empty() || t.size() > 10)
+        return false;
+    long long v = 0;
+    for (char c : t)
+    {
+        if (c < '0' || c > '9')
+            return false;
+        v = v * 10 + (c - '0');
+    }
+    if (v < 1 || v > MAX_JUMP)
+        return false;
+    out = (int32_t)v;
+    return true;
+}
+
 bool runCommand(DebugSession &s, const string &line, bool &quitRequested)
 {
     // 1. Split the line into words.
@@ -447,6 +465,42 @@ bool runCommand(DebugSession &s, const string &line, bool &quitRequested)
     //      help       -> printHelp
     //      quit, exit -> set quitRequested = true
     // 4. For anything else, or a wrong number of words, print "unknown command" and the help text, and return false.
+
+    vector<string> w;
+    istringstream iss(line);
+    string tok;
+    while (iss >> tok)
+        w.push_back(tok);
+    if (!w.empty() && w[0] == PROGRAM_NAME)
+        w.erase(w.begin());
+    if (w.empty())
+        return true; // blank line: ignore
+
+    if (w[0] == "start" && w.size() == 2)
+        return cmdStart(s, w[1]);
+    if (w[0] == "next" && w.size() == 1)
+        return cmdNext(s);
+    if (w[0] == "prv" && w.size() == 1)
+        return cmdPrv(s);
+    if (w[0] == "jmp" && w.size() == 3 && (w[1] == "next" || w[1] == "prv"))
+    {
+        int32_t n;
+        if (parsePositive(w[2], n))
+            return w[1] == "next" ? cmdJmpNext(s, n) : cmdJmpPrv(s, n);
+    }
+    if (w[0] == "help" && w.size() == 1)
+    {
+        printHelp();
+        return true;
+    }
+    if ((w[0] == "quit" || w[0] == "exit") && w.size() == 1)
+    {
+        quitRequested = true;
+        return true;
+    }
+    cout << "unknown command\n";
+    printHelp();
+    return false;
 }
 int main(int argc, char *argv[])
 {
@@ -460,4 +514,28 @@ int main(int argc, char *argv[])
     //
     // After the loop: closeSession(session) and return 0.
     // Never exit the loop because of an error. Only quit or the end of the input leaves it.
+
+    if (argc >= 2)
+        LB_HOST = argv[1];
+    if (argc >= 3)
+        LB_PORT = atoi(argv[2]);
+    signal(SIGPIPE, SIG_IGN);
+
+    DebugSession session;
+    initSession(session);
+    cout << "Time-Travel Debugger (" << PROGRAM_NAME << ") talking to "
+         << LB_HOST << ":" << LB_PORT << "\n";
+    printHelp();
+
+    bool quitRequested = false;
+    string line;
+    while (!quitRequested)
+    {
+        cout << PROMPT << flush;
+        if (!getline(cin, line))
+            break; // end of input
+        runCommand(session, line, quitRequested);
+    }
+    closeSession(session);
+    return 0;
 }
