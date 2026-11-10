@@ -293,3 +293,32 @@ Decisions / assumptions made:
 - The dispatcher sleeps 20 ms when the queue is empty to avoid busy-spinning.
 ```
 ---
+### Log 8
+```
+Date: 10 11 2026 (Afternoon)
+
+Goal of this session:
+Build the client so the full chain works: client -> load balancer -> server,then navigate the .tdbg file locally with next / prv / jmp.
+
+What I did:
+- Removed constants, structs and socket helpers from client.cpp that now live  in helper.h 
+- Part A: uploadSource (sendFileMessage + shutdown), receiveResponse  (TrailerChecker, status byte, file or error text, checksum verify), requestDebugFile (checks path, connects, uploads, reads reply).
+- Part B: readString/readVariable/readFrame/readSnapshotBody that mirror the server's field-by-field writers; openTdbg validates magic, stepCount, index position and offsets; readSnapshotAt seeks through the index; closeTdbg.
+- Part C/D: initSession, closeSession, showCurrent, moveBy (clamped), cmdStart (downloads to a temp file and swaps only after it opens), cmdNext, cmdPrv, cmdJmpNext, cmdJmpPrv.
+- Part E: printSnapshot, printHelp .
+
+Problems faced:
+- Saving the new download over the current .tdbg would destroy the open old session if the download failed.
+  Solved: download to ttdb_new.tdbg, open it, then rename over the old file.
+- Snapshot is very large, so it must be allocated on the heap.
+- Template default host was 127.0.0.0.
+  Solved: changed to 127.0.0.1.
+
+Decisions / assumptions made:
+- Steps are shown 1-based; internally 0-based.
+- jmp accepts positive numbers up to 1,000,000,000 and clamps at the ends.
+- Call stack prints current function first (the order the server writes it).
+- A failed start never changes the old session.
+- TdbgReader holds a FILE* instead of ssize_t file_index.
+```
+---
